@@ -92,8 +92,9 @@ tests/            Tests automáticos
 | GET / POST | `/api/empresas` | Listar / crear empresas |
 | PUT / DELETE | `/api/empresas/{id}` | Renombrar o cambiar CUIT / borrar (solo si no tiene movimientos) |
 
-Todas las rutas de movimientos, resumen, dashboard y exportación aceptan `?empresa={id}` (si no se indica, usan la primera).
 | GET | `/api/resumen` | Totales por moneda |
 | GET | `/api/exportar.csv` | Exportación |
 | GET | `/api/dashboard?desde=&hasta=&moneda=&segmento=categoria\|tercero\|factura` | Resumen mensual y segmentación |
 | GET | `/api/dashboard.csv` | Hoja de resumen mensual para Excel |
+
+Todas las rutas de movimientos, resumen, dashboard y exportación aceptan `?empresa={id}` (si no se indica, usan la primera).
