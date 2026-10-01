@@ -26,7 +26,7 @@ async function guardarCuits(valor) {
 
 $("#btn-cuit").onclick = async () => {
   const valor = prompt(
-    "CUIT de tu empresa (si tenés varios, separalos con coma).\n" +
+    `CUIT de ${empresaActual().nombre} (si tiene varios, separalos con coma).\n` +
       "Sirve para saber si un comprobante es un ingreso o un egreso.",
     auto.cuits.join(", ")
   );
@@ -87,11 +87,14 @@ async function procesar(archivo, forzar = false, liPrevio = null) {
   let nuevo;
   if (r.estado === "creado") {
     const m = r.movimiento;
-    nuevo = itemResultado("creado", `✔ ${describir(m)}`,
-      [m.numero_factura && `N.º ${m.numero_factura}`, m.categoria, r.datos.tipo_motivo].filter(Boolean).join(" · "),
+    const otra = m.empresa_id !== empresas.id;
+    nuevo = itemResultado("creado", `${otra ? `→ ${r.datos.empresa_nombre}: ` : ""}✔ ${describir(m)}`,
+      [otra && `Se cargó en ${r.datos.empresa_nombre} porque el CUIT del comprobante es de esa empresa`,
+        m.numero_factura && `N.º ${m.numero_factura}`, m.categoria, r.datos.tipo_motivo].filter(Boolean).join(" · "),
       [["Revisar", () => revisar(m.id)]]);
   } else if (r.estado === "duplicado") {
-    nuevo = itemResultado("duplicado", `⚠ ${archivo.name}: ya estaba cargado`, describir(r.movimiento), [
+    const donde = r.movimiento.empresa_id !== empresas.id ? ` en ${r.datos.empresa_nombre}` : "";
+    nuevo = itemResultado("duplicado", `⚠ ${archivo.name}: ya estaba cargado${donde}`, describir(r.movimiento), [
       ["Ver", () => revisar(r.movimiento.id)],
       ["Cargar igual", () => procesar(archivo, true, nuevo)],
     ]);
@@ -110,7 +113,7 @@ async function procesar(archivo, forzar = false, liPrevio = null) {
   if (sug && !auto.cuits.length && !auto.sugerido) {
     auto.sugerido = true;
     const liSug = itemResultado("procesando",
-      `¿${sug.cuit}${sug.nombre ? ` (${sug.nombre})` : ""} es el CUIT de tu empresa?`,
+      `¿${sug.cuit}${sug.nombre ? ` (${sug.nombre})` : ""} es el CUIT de ${empresaActual().nombre}?`,
       "Guardarlo permite distinguir solo los ingresos de los egresos.", [
         ["Sí, es mío", async () => { await guardarCuits([sug.cuit]); liSug.remove(); }, true],
         ["No", () => liSug.remove()],
@@ -159,4 +162,10 @@ window.addEventListener("drop", (ev) => {
   if (!$("#dlg").open) procesarVarios(ev.dataTransfer.files);
 });
 
-cargarAjustes().catch(() => {});
+document.addEventListener("empresa-cambiada", () => {
+  resLista.replaceChildren();
+  auto.sugerido = false;
+  cargarAjustes().catch(() => {});
+});
+
+listo.then(() => cargarAjustes()).catch(() => {});

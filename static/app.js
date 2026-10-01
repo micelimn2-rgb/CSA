@@ -13,8 +13,83 @@ const fmt = (n, moneda = "ARS") =>
 const fmtFecha = (iso) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// ------------------------------------------------------------ Empresa activa
+// Todo lo que se ve y se carga corresponde a la empresa elegida arriba.
+
+const empresas = { id: null, lista: [] };
+const empresaActual = () => empresas.lista.find((e) => e.id === empresas.id);
+
+function conEmpresa(url) {
+  if (!url.startsWith("api/") || url.startsWith("api/empresas") || empresas.id == null) return url;
+  return url + (url.includes("?") ? "&" : "?") + "empresa=" + empresas.id;
+}
+
+function recordarEmpresa(id) {
+  try { localStorage.setItem("csa-empresa", String(id)); } catch {}
+}
+function empresaRecordada() {
+  try { return Number(localStorage.getItem("csa-empresa")) || null; } catch { return null; }
+}
+
+async function cargarEmpresas() {
+  empresas.lista = await api("api/empresas");
+  if (!empresas.lista.some((e) => e.id === empresas.id)) {
+    const rec = empresaRecordada();
+    empresas.id = empresas.lista.some((e) => e.id === rec) ? rec : empresas.lista[0].id;
+  }
+  pintarEmpresas();
+}
+
+function pintarEmpresas() {
+  const cont = $("#empresas");
+  cont.replaceChildren();
+  for (const e of empresas.lista) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "empresa" + (e.id === empresas.id ? " activa" : "");
+    b.setAttribute("aria-pressed", e.id === empresas.id);
+    b.textContent = e.nombre;
+    b.onclick = () => elegirEmpresa(e.id);
+    cont.appendChild(b);
+  }
+  const sel = form.empresa_id;
+  sel.replaceChildren(...empresas.lista.map((e) => new Option(e.nombre, e.id)));
+  const actual = empresaActual();
+  document.title = `${actual.nombre} · CSA Ingresos y Gastos`;
+  $$(".nombre-empresa").forEach((el) => (el.textContent = actual.nombre));
+}
+
+function elegirEmpresa(id) {
+  if (id === empresas.id) return;
+  empresas.id = id;
+  recordarEmpresa(id);
+  pintarEmpresas();
+  document.dispatchEvent(new Event("empresa-cambiada"));
+}
+
+$("#btn-empresa-nueva").onclick = async () => {
+  const nombre = prompt("Nombre de la nueva empresa:");
+  if (!nombre?.trim()) return;
+  try {
+    const e = await api("api/empresas", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nombre }) });
+    await cargarEmpresas();
+    elegirEmpresa(e.id);
+  } catch (err) { alert(err.message); }
+};
+$("#btn-empresa-renombrar").onclick = async () => {
+  const actual = empresaActual();
+  const nombre = prompt("Nuevo nombre para la empresa:", actual.nombre);
+  if (!nombre?.trim() || nombre === actual.nombre) return;
+  try {
+    await api(`api/empresas/${actual.id}`, { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nombre }) });
+    await cargarEmpresas();
+  } catch (err) { alert(err.message); }
+};
+
 async function api(url, opciones = {}) {
-  const r = await fetch(url, opciones);
+  const r = await fetch(conEmpresa(url), opciones);
   if (!r.ok) {
     let msg = `Error ${r.status}`;
     try {
@@ -40,7 +115,7 @@ function filtrosQS() {
 
 async function cargar() {
   const qs = filtrosQS();
-  $("#btn-csv").href = "api/exportar.csv" + (qs ? "?" + qs : "");
+  $("#btn-csv").href = conEmpresa("api/exportar.csv" + (qs ? "?" + qs : ""));
   const [movs, res] = await Promise.all([api("api/movimientos?" + qs), api("api/resumen?" + qs)]);
   pintarResumen(res);
   pintarLista(movs);
@@ -108,6 +183,7 @@ function abrir(mov = null) {
   $("#btn-borrar").hidden = !mov;
   setTipo(mov?.tipo || "egreso");
   form.fecha_factura.value = mov?.fecha_factura || hoy();
+  form.empresa_id.value = mov?.empresa_id ?? empresas.id;
   $("#fecha-carga").value = mov ? mov.fecha_carga : "Hoy (automática)";
   for (const campo of ["monto", "moneda", "tercero", "cuit", "numero_factura", "categoria", "descripcion"]) {
     if (mov && mov[campo] != null) form[campo].value = mov[campo];
@@ -160,6 +236,7 @@ function aplicarDatos(datos, archivo) {
     n++;
   }
   if (datos.tipo) setTipo(datos.tipo);
+  if (datos.empresa_id) form.empresa_id.value = datos.empresa_id;
   if (n) setEstadoAdjunto(`📄 ${archivo.name} — se completaron ${n} campos. Revisalos antes de guardar.`, "ok");
   else setEstadoAdjunto(`📄 ${archivo.name} — ${datos.aviso || "no se pudieron leer datos"}. Completá los campos a mano.`, "aviso");
 }
@@ -230,5 +307,12 @@ form.addEventListener("submit", guardar);
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 
-cargar().catch((e) => ($("#lista").innerHTML = `<p class="vacio">No se pudo conectar: ${esc(e.message)}</p>`));
-cargarCategorias().catch(() => {});
+document.addEventListener("empresa-cambiada", () => {
+  cargar().catch(() => {});
+  cargarCategorias().catch(() => {});
+});
+
+// Las demás pantallas esperan a saber qué empresa mostrar
+const listo = cargarEmpresas()
+  .then(() => Promise.all([cargar(), cargarCategorias()]))
+  .catch((e) => ($("#lista").innerHTML = `<p class="vacio">No se pudo conectar: ${esc(e.message)}</p>`));

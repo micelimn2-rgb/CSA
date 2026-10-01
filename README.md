@@ -28,6 +28,11 @@ computadora o el celular, y en el celular se puede instalar como app
   - **Segmentación** por categoría, proveedor/cliente o con factura / manual: ranking de egresos e ingresos con % y una matriz segmento × mes.
   - **Hoja de resumen mensual** (mes, ingresos, egresos, saldo, acumulado, cantidad), descargable para Excel.
   - Filtros de período (últimos 12 meses, este año, año anterior, últimos 6 meses o personalizado) y moneda.
+- **Varias empresas** (vienen creadas **Solvencias** y **Agencia**): se elige arriba y todo queda separado —movimientos, resumen, dashboard, categorías, exportaciones y CUIT propio—.
+  - Se pueden renombrar (✎) y agregar más (+ Empresa).
+  - La carga automática manda cada comprobante a la empresa cuyo CUIT figura en él, aunque estés viendo la otra.
+  - Un movimiento se puede pasar a otra empresa desde su edición.
+  - Lo cargado antes de separar por empresas quedó en la primera (Solvencias).
 - **Base de datos**: SQLite en `data/csa.db`. Las facturas se guardan en `data/facturas/`.
 
 ## Cómo probarla (doble clic)
@@ -83,7 +88,11 @@ tests/            Tests automáticos
 | GET | `/api/movimientos/{id}/adjunto` | Ver la factura adjunta |
 | POST | `/api/leer-factura` | Devuelve los datos leídos de un PDF o una imagen |
 | POST | `/api/carga-automatica` | Lee el comprobante y guarda el movimiento (`forzar=true` ignora duplicados) |
-| GET / PUT | `/api/ajustes` | CUIT propios (`{"cuits_propios": [...]}`) |
+| GET / PUT | `/api/ajustes` | CUIT propios de la empresa (`{"cuits_propios": [...]}`) |
+| GET / POST | `/api/empresas` | Listar / crear empresas |
+| PUT / DELETE | `/api/empresas/{id}` | Renombrar o cambiar CUIT / borrar (solo si no tiene movimientos) |
+
+Todas las rutas de movimientos, resumen, dashboard y exportación aceptan `?empresa={id}` (si no se indica, usan la primera).
 | GET | `/api/resumen` | Totales por moneda |
 | GET | `/api/exportar.csv` | Exportación |
 | GET | `/api/dashboard?desde=&hasta=&moneda=&segmento=categoria\|tercero\|factura` | Resumen mensual y segmentación |

@@ -20,11 +20,18 @@
     <button id="btn-nuevo" class="btn primary">+ Nuevo</button>
   </header>
 
+  <div class="barra-empresas">
+    <span class="rotulo">Empresa</span>
+    <div id="empresas" class="empresas" role="group" aria-label="Empresa"></div>
+    <button type="button" id="btn-empresa-renombrar" class="btn ghost chico" title="Renombrar esta empresa">✎</button>
+    <button type="button" id="btn-empresa-nueva" class="btn ghost chico" title="Agregar empresa" aria-label="Agregar empresa">+<span class="txt-largo"> Empresa</span></button>
+  </div>
+
   <main id="vista-movimientos">
     <section id="auto" class="auto">
       <div class="auto-cab">
         <div>
-          <h2>Carga automática</h2>
+          <h2>Carga automática · <span class="nombre-empresa"></span></h2>
           <p class="nota">Subí facturas o comprobantes de transferencia (PDF, foto o captura) y se guardan solos.
             También podés arrastrarlos a esta pantalla.</p>
         </div>
@@ -37,7 +44,7 @@
           </label>
         </div>
       </div>
-      <p class="nota ajustes-linea">Mi CUIT: <b id="auto-cuit">no configurado</b>
+      <p class="nota ajustes-linea"><span>CUIT de <span class="nombre-empresa"></span>:</span> <b id="auto-cuit">no configurado</b>
         <button type="button" class="btn ghost chico" id="btn-cuit">Cambiar</button>
         <span id="auto-lectores"></span></p>
       <ul id="auto-res" class="auto-res" aria-live="polite"></ul>
@@ -189,6 +196,9 @@
         </label>
         <label>Fecha de carga
           <input id="fecha-carga" type="text" readonly tabindex="-1">
+        </label>
+        <label class="ancho">Empresa
+          <select name="empresa_id"></select>
         </label>
         <label class="ancho">Proveedor / Cliente
           <input name="tercero" type="text" autocomplete="off">

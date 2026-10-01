@@ -60,20 +60,24 @@ PROMPT = (
 
 def extraer(contenido: bytes, content_type: str, cuits_propios: list[str] | None = None) -> dict:
     """Devuelve los campos del movimiento listos para guardar, más 'metodo' y 'documento'."""
-    crudo = None
+    crudo, metodo, aviso = leer_crudo(contenido, content_type)
+    if crudo is None:
+        return {"metodo": "ninguno", "aviso": aviso}
+    return {**resolver(crudo, cuits_propios or []), "metodo": metodo}
+
+
+def leer_crudo(contenido: bytes, content_type: str):
+    """Lee el comprobante sin interpretar a quién pertenece. Devuelve (datos, metodo, aviso)."""
     if os.environ.get("ANTHROPIC_API_KEY") and (content_type == "application/pdf" or content_type in IMAGE_TYPES):
         try:
-            crudo, metodo = _extraer_con_claude(contenido, content_type), "ia"
+            return _extraer_con_claude(contenido, content_type), "ia", None
         except Exception as exc:  # si falla la IA, se intenta en modo local
             log.warning("Falló la extracción con Claude: %s", exc)
 
-    if crudo is None:
-        filas, metodo, aviso = _filas_de_archivo(contenido, content_type)
-        if not filas:
-            return {"metodo": "ninguno", "aviso": aviso}
-        crudo = analizar_filas(filas)
-
-    return {**resolver(crudo, cuits_propios or []), "metodo": metodo}
+    filas, metodo, aviso = _filas_de_archivo(contenido, content_type)
+    if not filas:
+        return None, "ninguno", aviso
+    return analizar_filas(filas), metodo, None
 
 
 # ================================================================ Claude
@@ -537,20 +541,23 @@ def resolver(d: dict, cuits_propios: list[str]) -> dict:
     receptor = (d.get("receptor_nombre"), d.get("receptor_cuit"))
     documento = d.get("documento") or "otro"
 
+    propio = None  # el CUIT propio que aparece en el comprobante, si alguno
     if documento == "transferencia":
         # Transferencia: emisor = ordenante (paga), receptor = beneficiario (cobra)
-        if receptor[1] and receptor[1] in propios:
-            tipo, contra, motivo = "ingreso", emisor, "el beneficiario es tu CUIT"
+        if emisor[1] and emisor[1] in propios:
+            tipo, contra, motivo, propio = "egreso", receptor, "el ordenante es tu CUIT", emisor[1]
+        elif receptor[1] and receptor[1] in propios:
+            tipo, contra, motivo, propio = "ingreso", emisor, "el beneficiario es tu CUIT", receptor[1]
         else:
-            tipo, contra = "egreso", receptor
-            motivo = "el ordenante es tu CUIT" if emisor[1] in propios else "transferencia enviada (por defecto)"
+            tipo, contra, motivo = "egreso", receptor, "transferencia enviada (por defecto)"
     else:
         # Factura/recibo: emisor = quien cobra
         if emisor[1] and emisor[1] in propios:
-            tipo, contra, motivo = "ingreso", receptor, "la emitiste vos"
+            tipo, contra, motivo, propio = "ingreso", receptor, "la emitiste vos", emisor[1]
+        elif receptor[1] and receptor[1] in propios:
+            tipo, contra, motivo, propio = "egreso", emisor, "la recibiste vos", receptor[1]
         else:
-            tipo, contra = "egreso", emisor
-            motivo = "la recibiste vos" if receptor[1] in propios else "comprobante recibido (por defecto)"
+            tipo, contra, motivo = "egreso", emisor, "comprobante recibido (por defecto)"
 
     nombre_contra = _separar_nombre(contra[0], d.get("descripcion") or "")
     salida = {
@@ -564,6 +571,7 @@ def resolver(d: dict, cuits_propios: list[str]) -> dict:
         "tercero": (nombre_contra or "").strip()[:120] or None,
         "cuit": contra[1],
         "descripcion": d.get("descripcion"),
+        "cuit_propio": propio,
     }
     # Si no hay CUIT propio configurado, se sugiere el del lado "propio" según el tipo asumido
     if not propios:

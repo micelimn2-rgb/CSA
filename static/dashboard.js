@@ -22,12 +22,18 @@ function el(tag, attrs = {}, padre) {
 
 function mostrarVista() {
   const vista = location.hash === "#dashboard" ? "dashboard" : "movimientos";
+  document.body.dataset.vista = vista;
   $("#vista-movimientos").hidden = vista !== "movimientos";
   $("#vista-dashboard").hidden = vista !== "dashboard";
   $$(".tabs a").forEach((a) => a.classList.toggle("activo", a.dataset.vista === vista));
   if (vista === "dashboard") cargarDashboard();
 }
 window.addEventListener("hashchange", mostrarVista);
+document.addEventListener("empresa-cambiada", () => {
+  $("#d-moneda").replaceChildren(); // cada empresa tiene sus monedas
+  if (!$("#vista-dashboard").hidden) cargarDashboard();
+  else dash.cargado = false;
+});
 document.addEventListener("movimientos-cambiaron", () => {
   if (!$("#vista-dashboard").hidden) cargarDashboard();
   else dash.cargado = false;
@@ -65,7 +71,7 @@ async function cargarDashboard() {
   const cuerpo = $("#dash-cuerpo");
   cuerpo.classList.add("cargando"); // mantiene el render anterior mientras recarga
   const qs = qsDashboard();
-  $("#d-csv").href = "api/dashboard.csv?" + qs;
+  $("#d-csv").href = conEmpresa("api/dashboard.csv?" + qs);
   try {
     dash.datos = await api("api/dashboard?" + qs);
     dash.cargado = true;
@@ -430,4 +436,4 @@ window.addEventListener("resize", () => {
   tResize = setTimeout(() => dash.datos && !$("#vista-dashboard").hidden && pintarDashboard(), 150);
 });
 
-mostrarVista();
+listo.then(mostrarVista);
