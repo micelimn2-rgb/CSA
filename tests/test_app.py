@@ -5,12 +5,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-def pdf_con_texto(lineas: list[str]) -> bytes:
-    """Genera un PDF mínimo con una línea de texto por renglón."""
-    ops = ["BT", "/F1 11 Tf", "50 800 Td", "14 TL"]
-    for l in lineas:
-        ops.append("(" + l.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ") Tj T*")
-    ops.append("ET")
+def _pdf_str(t: str) -> str:
+    return "(" + t.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ")"
+
+
+def pdf_con_texto(lineas: list) -> bytes:
+    """Genera un PDF mínimo. Cada renglón es un texto o una lista de (x, texto) para armar columnas."""
+    ops = []
+    for i, l in enumerate(lineas):
+        celdas = [(50, l)] if isinstance(l, str) else l
+        for x, t in celdas:
+            ops.append(f"BT /F1 11 Tf {x} {800 - 16 * i} Td {_pdf_str(t)} Tj ET")
     stream = "\n".join(ops).encode("latin-1")
     objs = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
@@ -127,9 +132,12 @@ def test_leer_factura_pdf_sin_ia(client):
     assert d["tercero"].startswith("Ferreteria El Tornillo")
 
 
-def test_leer_foto_sin_ia_avisa(client):
+def test_leer_foto_sin_ocr_ni_ia_avisa(client, monkeypatch):
+    from app import extractor
+    monkeypatch.setattr(extractor, "_filas_ocr", lambda contenido: None)
     r = client.post("/api/leer-factura", files={"archivo": ("f.jpg", b"\xff\xd8\xff", "image/jpeg")})
-    assert r.status_code == 200 and r.json()["metodo"] == "ninguno" and "ANTHROPIC_API_KEY" in r.json()["aviso"]
+    d = r.json()
+    assert r.status_code == 200 and d["metodo"] == "ninguno" and "requirements-ocr" in d["aviso"]
 
 
 def test_parse_monto():

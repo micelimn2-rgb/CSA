@@ -3,12 +3,13 @@ import base64
 import csv
 import io
 import os
+import re
 import secrets
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -97,6 +98,7 @@ def _fila(row) -> dict:
     d = dict(row)
     d["tiene_factura"] = bool(d["tiene_factura"])
     d["tiene_adjunto"] = bool(d.pop("adjunto_archivo"))
+    d["revisar"] = bool(d.get("revisar"))
     return d
 
 
@@ -194,17 +196,26 @@ async def crear(
         adjunto = _guardar_adjunto(contenido, archivo.filename)
         adjunto_nombre = archivo.filename
 
-    tiene_factura = bool(adjunto or (numero_factura or "").strip())
     with db.connect() as conn:
-        cur = conn.execute(
-            """INSERT INTO movimientos (tipo, monto, moneda, fecha_factura, fecha_carga, numero_factura, tercero,
-                   cuit, categoria, descripcion, tiene_factura, adjunto_archivo, adjunto_nombre, adjunto_tipo)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (_validar_tipo(tipo), _validar_monto(monto), (moneda or "ARS").upper()[:5], _validar_fecha(fecha_factura),
-             _ahora(), _vacio(numero_factura), _vacio(tercero), _vacio(cuit), _vacio(categoria),
-             _vacio(descripcion), int(tiene_factura), adjunto, adjunto_nombre, adjunto_tipo),
-        )
-        return _fila(_obtener(conn, cur.lastrowid))
+        mov_id = _insertar(conn, dict(tipo=tipo, monto=monto, moneda=moneda, fecha_factura=fecha_factura,
+                                      numero_factura=numero_factura, tercero=tercero, cuit=cuit, categoria=categoria,
+                                      descripcion=descripcion), (adjunto, adjunto_nombre, adjunto_tipo))
+        return _fila(_obtener(conn, mov_id))
+
+
+def _insertar(conn, c: dict, adjunto: tuple, origen: str = "manual", revisar: bool = False) -> int:
+    numero = _vacio(c.get("numero_factura"))
+    cur = conn.execute(
+        """INSERT INTO movimientos (tipo, monto, moneda, fecha_factura, fecha_carga, numero_factura, tercero,
+               cuit, categoria, descripcion, tiene_factura, adjunto_archivo, adjunto_nombre, adjunto_tipo,
+               origen, revisar)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (_validar_tipo(c["tipo"]), _validar_monto(float(c["monto"])), (c.get("moneda") or "ARS").upper()[:5],
+         _validar_fecha(c.get("fecha_factura")), _ahora(), numero, _vacio(c.get("tercero")), _vacio(c.get("cuit")),
+         _vacio(c.get("categoria")), _vacio(c.get("descripcion")), int(bool(adjunto[0] or numero)),
+         *adjunto, origen, int(revisar)),
+    )
+    return cur.lastrowid
 
 
 @app.put("/api/movimientos/{mov_id}")
@@ -237,7 +248,7 @@ async def actualizar(
         conn.execute(
             """UPDATE movimientos SET tipo=?, monto=?, moneda=?, fecha_factura=?, numero_factura=?, tercero=?, cuit=?,
                    categoria=?, descripcion=?, tiene_factura=?, adjunto_archivo=?, adjunto_nombre=?, adjunto_tipo=?,
-                   actualizado=? WHERE id=?""",
+                   actualizado=?, revisar=0 WHERE id=?""",
             (_validar_tipo(tipo), _validar_monto(monto), (moneda or "ARS").upper()[:5], _validar_fecha(fecha_factura),
              _vacio(numero_factura), _vacio(tercero), _vacio(cuit), _vacio(categoria), _vacio(descripcion),
              int(tiene_factura), adjunto, adjunto_nombre, adjunto_tipo, _ahora(), mov_id),
@@ -269,10 +280,94 @@ def descargar_adjunto(mov_id: int):
 
 # ---------------------------------------------------------------- Lectura de facturas
 
+def _cuits_propios(conn) -> list[str]:
+    return [c for c in db.leer_ajuste(conn, "cuits_propios").split(",") if c]
+
+
+def _completar_con_historial(conn, datos: dict) -> None:
+    """Usa lo ya cargado: el nombre corregido de esa contraparte y su categoría más habitual."""
+    cuit, tercero = datos.get("cuit"), datos.get("tercero")
+    if cuit:
+        row = conn.execute("SELECT tercero FROM movimientos WHERE cuit = ? AND tercero IS NOT NULL "
+                           "ORDER BY revisar ASC, id DESC LIMIT 1", (cuit,)).fetchone()
+        if row:
+            datos["tercero"] = tercero = row["tercero"]
+    if not (cuit or tercero):
+        return
+    row = conn.execute(
+        """SELECT categoria, COUNT(*) n FROM movimientos
+           WHERE categoria IS NOT NULL AND ((? IS NOT NULL AND cuit = ?) OR (? IS NOT NULL AND tercero = ?))
+           GROUP BY categoria ORDER BY n DESC, MAX(id) DESC LIMIT 1""",
+        (cuit, cuit, tercero, tercero)).fetchone()
+    if row:
+        datos["categoria"] = row["categoria"]
+
+
+def _leer_y_completar(contenido: bytes, tipo_archivo: str) -> dict:
+    with db.connect() as conn:
+        datos = extractor.extraer(contenido, tipo_archivo, _cuits_propios(conn))
+        if datos.get("metodo") != "ninguno":
+            _completar_con_historial(conn, datos)
+    return datos
+
+
 @app.post("/api/leer-factura")
 async def leer_factura(archivo: UploadFile = File(...)):
     contenido, tipo = await _leer_adjunto(archivo)
-    return extractor.extraer(contenido, tipo)
+    return _leer_y_completar(contenido, tipo)
+
+
+@app.post("/api/carga-automatica")
+async def carga_automatica(archivo: UploadFile = File(...), forzar: bool = Form(False)):
+    """Lee el comprobante y, si encuentra el monto, guarda el movimiento sin pedir nada más."""
+    contenido, tipo_archivo = await _leer_adjunto(archivo)
+    datos = _leer_y_completar(contenido, tipo_archivo)
+    respuesta = {"datos": datos, "archivo": archivo.filename}
+    if datos.get("sugerencia_cuit_propio"):
+        respuesta["sugerencia_cuit_propio"] = datos["sugerencia_cuit_propio"]
+
+    if not datos.get("monto"):
+        return {**respuesta, "estado": "incompleto",
+                "mensaje": datos.get("aviso") or "No se encontró el monto. Completalo a mano."}
+
+    with db.connect() as conn:
+        if not forzar and datos.get("numero_factura"):
+            dup = conn.execute(
+                "SELECT * FROM movimientos WHERE numero_factura = ? AND ABS(monto - ?) < 0.01 AND moneda = ? LIMIT 1",
+                (datos["numero_factura"], datos["monto"], datos.get("moneda", "ARS"))).fetchone()
+            if dup:
+                return {**respuesta, "estado": "duplicado", "movimiento": _fila(dup),
+                        "mensaje": "Ya estaba cargado (mismo n.º y monto)."}
+        adjunto = (_guardar_adjunto(contenido, archivo.filename), archivo.filename, tipo_archivo)
+        mov_id = _insertar(conn, datos, adjunto, origen="automatica", revisar=True)
+        return {**respuesta, "estado": "creado", "movimiento": _fila(_obtener(conn, mov_id))}
+
+
+# ---------------------------------------------------------------- Ajustes
+
+@app.get("/api/ajustes")
+def ver_ajustes():
+    with db.connect() as conn:
+        return {"cuits_propios": _cuits_propios(conn), "ocr_local": extractor.ocr_disponible(),
+                "ia": bool(os.environ.get("ANTHROPIC_API_KEY"))}
+
+
+@app.put("/api/ajustes")
+def guardar_ajustes(cuerpo: dict = Body(...)):
+    cuits = cuerpo.get("cuits_propios", [])
+    if isinstance(cuits, str):
+        cuits = re.split(r"[,;\s]+", cuits)
+    normalizados = []
+    for c in cuits:
+        if not str(c).strip():
+            continue
+        n = extractor.norm_cuit(str(c))
+        if not n:
+            raise HTTPException(422, f"CUIT inválido: {c} (deben ser 11 dígitos)")
+        normalizados.append(n)
+    with db.connect() as conn:
+        db.guardar_ajuste(conn, "cuits_propios", ",".join(dict.fromkeys(normalizados)))
+    return ver_ajustes()
 
 
 # ---------------------------------------------------------------- Exportación

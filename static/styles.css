@@ -253,3 +253,32 @@ dialog form { padding: 16px; }
   .tabs a { font-size: .95rem; }
   #btn-nuevo { padding: 8px 12px; }
 }
+
+/* ---------------------------------------------------------------- Carga automática */
+.auto { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 16px; }
+.auto-cab { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; }
+.auto h2 { margin: 0; font-size: 1rem; }
+.auto .nota { margin-top: 4px; }
+.ajustes-linea { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.btn.chico { min-height: 28px; padding: 2px 8px; font-size: .85rem; }
+.auto-res { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.auto-res:empty { display: none; }
+.auto-res li {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 8px 10px; border-radius: 10px; background: var(--bg); font-size: .9rem;
+}
+.auto-res li .txt { flex: 1 1 220px; min-width: 0; }
+.auto-res li .txt small { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.auto-res li.creado { border-left: 4px solid var(--ingreso); }
+.auto-res li.duplicado, .auto-res li.incompleto { border-left: 4px solid var(--egreso); }
+.auto-res li.procesando { border-left: 4px solid var(--border); color: var(--muted); }
+.chip.pendiente { color: var(--text); border-color: var(--primary); }
+.soltar {
+  position: fixed; inset: 12px; z-index: 40; display: grid; place-items: center;
+  border: 3px dashed var(--primary); border-radius: 20px;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  font-size: 1.3rem; font-weight: 700; pointer-events: none;
+}
+.soltar[hidden] { display: none; }
+.auto-res li { min-width: 0; }
+.auto-res li .txt { overflow: hidden; }

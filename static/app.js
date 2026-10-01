@@ -74,7 +74,7 @@ function pintarLista(movs) {
         <span class="titulo">${esc(m.tercero || m.descripcion || (m.tipo === "ingreso" ? "Ingreso" : "Gasto"))}</span>
         <span class="monto ${m.tipo === "ingreso" ? "ing" : "egr"}">${m.tipo === "ingreso" ? "+" : "−"} ${fmt(m.monto, m.moneda)}</span>
         <span class="meta">${fmtFecha(m.fecha_factura)}${m.categoria ? " · " + esc(m.categoria) : ""}${m.numero_factura ? " · " + esc(m.numero_factura) : ""}</span>
-        <span class="chips">${m.tiene_adjunto ? '<span class="chip">📎 factura</span>' : m.tiene_factura ? '<span class="chip">con factura</span>' : '<span class="chip">manual</span>'}</span>
+        <span class="chips">${m.revisar ? '<span class="chip pendiente">⚡ a revisar</span> ' : ""}${m.tiene_adjunto ? '<span class="chip">📎 comprobante</span>' : m.tiene_factura ? '<span class="chip">con factura</span>' : '<span class="chip">manual</span>'}</span>
       </button>`
     )
     .join("");
@@ -125,7 +125,8 @@ function abrir(mov = null) {
   } else {
     actual.hidden = true;
   }
-  setEstadoAdjunto("Sin factura: cargá el gasto manualmente.");
+  setEstadoAdjunto(mov?.tiene_adjunto ? "Podés reemplazar el comprobante adjuntando otro."
+    : "Sin factura: cargá el gasto manualmente.");
   dlg.showModal();
   if (!mov) form.monto.focus();
 }
@@ -139,23 +140,28 @@ async function alElegirArchivo(ev) {
   const fd = new FormData();
   fd.append("archivo", archivo);
   try {
-    const datos = await api("api/leer-factura", { method: "POST", body: fd });
-    const campos = ["monto", "moneda", "fecha_factura", "numero_factura", "tercero", "cuit", "descripcion"];
-    let n = 0;
-    for (const c of campos) {
-      if (datos[c] == null || !form[c]) continue;
-      if (c === "moneda" && ![...form.moneda.options].some((o) => o.value === datos[c])) {
-        form.moneda.add(new Option(datos[c]));
-      }
-      form[c].value = datos[c];
-      n++;
-    }
-    if (n) setEstadoAdjunto(`📄 ${archivo.name} — se completaron ${n} campos. Revisalos antes de guardar.`, "ok");
-    else setEstadoAdjunto(`📄 ${archivo.name} — ${datos.aviso || "no se pudieron leer datos"}. Completá los campos a mano.`, "aviso");
+    aplicarDatos(await api("api/leer-factura", { method: "POST", body: fd }), archivo);
   } catch (e) {
     setEstadoAdjunto(`📄 ${archivo.name} — ${e.message}`, "aviso");
     if (/acepta|supera|vacío/.test(e.message)) estado.archivo = null;
   }
+}
+
+// Vuelca en el formulario los datos leídos de un comprobante
+function aplicarDatos(datos, archivo) {
+  const campos = ["monto", "moneda", "fecha_factura", "numero_factura", "tercero", "cuit", "categoria", "descripcion"];
+  let n = 0;
+  for (const c of campos) {
+    if (datos[c] == null || !form[c]) continue;
+    if (c === "moneda" && ![...form.moneda.options].some((o) => o.value === datos[c])) {
+      form.moneda.add(new Option(datos[c]));
+    }
+    form[c].value = datos[c];
+    n++;
+  }
+  if (datos.tipo) setTipo(datos.tipo);
+  if (n) setEstadoAdjunto(`📄 ${archivo.name} — se completaron ${n} campos. Revisalos antes de guardar.`, "ok");
+  else setEstadoAdjunto(`📄 ${archivo.name} — ${datos.aviso || "no se pudieron leer datos"}. Completá los campos a mano.`, "aviso");
 }
 
 async function guardar(ev) {

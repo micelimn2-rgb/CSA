@@ -21,6 +21,28 @@
   </header>
 
   <main id="vista-movimientos">
+    <section id="auto" class="auto">
+      <div class="auto-cab">
+        <div>
+          <h2>Carga automática</h2>
+          <p class="nota">Subí facturas o comprobantes de transferencia (PDF, foto o captura) y se guardan solos.
+            También podés arrastrarlos a esta pantalla.</p>
+        </div>
+        <div class="adj-opciones">
+          <label class="btn primary">📎 Subir comprobantes
+            <input id="auto-archivos" type="file" accept="application/pdf,image/*" multiple hidden>
+          </label>
+          <label class="btn">📷 Foto
+            <input id="auto-foto" type="file" accept="image/*" capture="environment" hidden>
+          </label>
+        </div>
+      </div>
+      <p class="nota ajustes-linea">Mi CUIT: <b id="auto-cuit">no configurado</b>
+        <button type="button" class="btn ghost chico" id="btn-cuit">Cambiar</button>
+        <span id="auto-lectores"></span></p>
+      <ul id="auto-res" class="auto-res" aria-live="polite"></ul>
+    </section>
+
     <section id="resumen" class="resumen" aria-live="polite"></section>
 
     <section class="filtros">
@@ -122,6 +144,8 @@
     </div>
   </main>
 
+  <div id="soltar" class="soltar" hidden>Soltá los comprobantes para cargarlos</div>
+
   <div id="tooltip" class="tooltip" role="status" hidden></div>
 
   <dialog id="dlg">
@@ -197,5 +221,6 @@
 
   <script src="app.js"></script>
   <script src="dashboard.js"></script>
+  <script src="carga.js"></script>
 </body>
 </html>

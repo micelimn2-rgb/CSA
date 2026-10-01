@@ -11,8 +11,14 @@ computadora o el celular, y en el celular se puede instalar como app
 - **Fecha de carga automática**: se guarda sola al crear el movimiento y no se puede editar.
 - **Factura adjunta (opcional)**: PDF o foto, también directo con la cámara del celular. Si no hay factura, el gasto se carga a mano.
 - **Lectura automática de la factura**: al adjuntarla se completan monto, fecha, n.º de factura, proveedor, CUIT y detalle. Revisá los datos antes de guardar.
-  - Sin configuración extra: lee **PDFs con texto** (las facturas electrónicas de AFIP, por ejemplo).
-  - Con `ANTHROPIC_API_KEY`: lee también **fotos y PDFs escaneados** usando IA (Claude).
+  - Lee **PDFs con texto**, y también **fotos, capturas de pantalla y PDFs escaneados** con un lector local (OCR), sin internet ni costo.
+  - Opcional, con `ANTHROPIC_API_KEY`: usa IA (Claude) para leer con más precisión.
+- **Carga automática**: subís (o arrastrás) uno o varios comprobantes —facturas o transferencias bancarias— y el movimiento se guarda solo:
+  - Detecta monto, fecha, n.º de factura o referencia, contraparte, CUIT, CBU, motivo y concepto.
+  - Decide si es **ingreso o egreso** según el CUIT de tu empresa (se configura una vez; la app lo sugiere al primer comprobante).
+  - **Aprende**: si corregís el nombre o la categoría de un proveedor, los próximos comprobantes de ese CUIT ya vienen con esos datos.
+  - Avisa si un comprobante **ya estaba cargado** (mismo n.º y monto).
+  - Los movimientos cargados solos quedan marcados "⚡ a revisar" hasta que los abrís y guardás.
 - **Proveedor/cliente, CUIT, categoría y detalle/referencias.**
 - **Resumen** de ingresos, egresos y saldo por moneda, con **filtros** por tipo, fechas y texto.
 - **Exportación a CSV** (se abre en Excel).
@@ -35,6 +41,7 @@ computadora o el celular, y en el celular se puede instalar como app
 
 ```bash
 pip install -r requirements.txt
+pip install -r requirements-ocr.txt   # opcional: lector de fotos
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -75,6 +82,8 @@ tests/            Tests automáticos
 | GET / PUT / DELETE | `/api/movimientos/{id}` | Ver, editar o borrar |
 | GET | `/api/movimientos/{id}/adjunto` | Ver la factura adjunta |
 | POST | `/api/leer-factura` | Devuelve los datos leídos de un PDF o una imagen |
+| POST | `/api/carga-automatica` | Lee el comprobante y guarda el movimiento (`forzar=true` ignora duplicados) |
+| GET / PUT | `/api/ajustes` | CUIT propios (`{"cuits_propios": [...]}`) |
 | GET | `/api/resumen` | Totales por moneda |
 | GET | `/api/exportar.csv` | Exportación |
 | GET | `/api/dashboard?desde=&hasta=&moneda=&segmento=categoria\|tercero\|factura` | Resumen mensual y segmentación |

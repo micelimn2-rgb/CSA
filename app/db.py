@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS movimientos (
     adjunto_tipo    TEXT,
     actualizado     TEXT
 );
+CREATE TABLE IF NOT EXISTS ajustes (
+    clave TEXT PRIMARY KEY,
+    valor TEXT
+);
 CREATE INDEX IF NOT EXISTS idx_mov_fecha ON movimientos (fecha_factura);
 CREATE INDEX IF NOT EXISTS idx_mov_tipo  ON movimientos (tipo);
 """
@@ -37,6 +41,27 @@ def init_db() -> None:
     UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _migrar(conn)
+
+
+def _migrar(conn) -> None:
+    """Agrega columnas nuevas a bases creadas con versiones anteriores."""
+    columnas = {r["name"] for r in conn.execute("PRAGMA table_info(movimientos)")}
+    if "origen" not in columnas:  # 'manual' o 'automatica'
+        conn.execute("ALTER TABLE movimientos ADD COLUMN origen TEXT NOT NULL DEFAULT 'manual'")
+    if "revisar" not in columnas:  # 1 = cargado automáticamente y todavía no revisado
+        conn.execute("ALTER TABLE movimientos ADD COLUMN revisar INTEGER NOT NULL DEFAULT 0")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_mov_cuit ON movimientos (cuit)")
+
+
+def leer_ajuste(conn, clave: str, defecto: str = "") -> str:
+    row = conn.execute("SELECT valor FROM ajustes WHERE clave = ?", (clave,)).fetchone()
+    return row["valor"] if row and row["valor"] is not None else defecto
+
+
+def guardar_ajuste(conn, clave: str, valor: str) -> None:
+    conn.execute("INSERT INTO ajustes (clave, valor) VALUES (?, ?) "
+                 "ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor", (clave, valor))
 
 
 @contextmanager

@@ -24,8 +24,12 @@ def main() -> None:
         sys.exit("Se necesita Python 3.10 o más nuevo. Bajalo de https://www.python.org/downloads/")
 
     print("Instalando / verificando lo necesario (la primera vez tarda un poco)...")
-    subprocess.run([sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check",
-                    "-r", str(CARPETA / "requirements.txt")], check=True)
+    pip = [sys.executable, "-m", "pip", "install", "-q", "--disable-pip-version-check", "-r"]
+    subprocess.run(pip + [str(CARPETA / "requirements.txt")], check=True)
+    # El lector de fotos es opcional: si no se puede instalar, la app igual funciona
+    if subprocess.run(pip + [str(CARPETA / "requirements-ocr.txt")]).returncode != 0:
+        print("\nAviso: no se pudo instalar el lector de fotos. La app funciona igual,")
+        print("pero solo va a leer automáticamente PDFs con texto.\n")
 
     ip = ip_local()
     print("\n" + "=" * 60)

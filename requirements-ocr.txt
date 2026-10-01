@@ -1,0 +1,3 @@
+# Lector local de fotos, capturas y PDFs escaneados (opcional, no necesita internet ni clave)
+rapidocr_onnxruntime>=1.3,<2
+pypdfium2>=4.0
