@@ -16,6 +16,12 @@ computadora o el celular, y en el celular se puede instalar como app
 - **Proveedor/cliente, CUIT, categoría y detalle/referencias.**
 - **Resumen** de ingresos, egresos y saldo por moneda, con **filtros** por tipo, fechas y texto.
 - **Exportación a CSV** (se abre en Excel).
+- **Dashboard** (pestaña "Dashboard"):
+  - Indicadores del período: ingresos, egresos, saldo y margen.
+  - Gráfico de ingresos vs. egresos por mes y saldo acumulado.
+  - **Segmentación** por categoría, proveedor/cliente o con factura / manual: ranking de egresos e ingresos con % y una matriz segmento × mes.
+  - **Hoja de resumen mensual** (mes, ingresos, egresos, saldo, acumulado, cantidad), descargable para Excel.
+  - Filtros de período (últimos 12 meses, este año, año anterior, últimos 6 meses o personalizado) y moneda.
 - **Base de datos**: SQLite en `data/csa.db`. Las facturas se guardan en `data/facturas/`.
 
 ## Cómo levantarla
@@ -64,3 +70,5 @@ tests/            Tests automáticos
 | POST | `/api/leer-factura` | Devuelve los datos leídos de un PDF o una imagen |
 | GET | `/api/resumen` | Totales por moneda |
 | GET | `/api/exportar.csv` | Exportación |
+| GET | `/api/dashboard?desde=&hasta=&moneda=&segmento=categoria\|tercero\|factura` | Resumen mensual y segmentación |
+| GET | `/api/dashboard.csv` | Hoja de resumen mensual para Excel |

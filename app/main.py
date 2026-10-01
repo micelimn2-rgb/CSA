@@ -5,7 +5,7 @@ import io
 import os
 import secrets
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -297,6 +297,153 @@ def exportar(tipo: str | None = None, desde: str | None = None, hasta: str | Non
 def _vacio(v: str | None) -> str | None:
     v = (v or "").strip()
     return v or None
+
+
+# ---------------------------------------------------------------- Dashboard
+
+SEGMENTOS = {
+    "categoria": "COALESCE(NULLIF(TRIM(categoria), ''), 'Sin categoría')",
+    "tercero": "COALESCE(NULLIF(TRIM(tercero), ''), 'Sin proveedor/cliente')",
+    "factura": """CASE WHEN adjunto_archivo IS NOT NULL THEN 'Con factura adjunta'
+                       WHEN tiene_factura = 1 THEN 'Con n.º de factura'
+                       ELSE 'Manual (sin factura)' END""",
+}
+MAX_SEGMENTOS = 8  # el resto se agrupa en "Otros"
+
+
+def _meses_entre(desde: date, hasta: date) -> list[str]:
+    meses, y, m = [], desde.year, desde.month
+    while (y, m) <= (hasta.year, hasta.month):
+        meses.append(f"{y:04d}-{m:02d}")
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return meses
+
+
+def _rango_por_defecto() -> tuple[date, date]:
+    """Últimos 12 meses, incluyendo el actual."""
+    hoy = date.today()
+    y, m = hoy.year, hoy.month - 11
+    if m <= 0:
+        y, m = y - 1, m + 12
+    fin = date(hoy.year + (hoy.month == 12), hoy.month % 12 + 1, 1) - timedelta(days=1)
+    return date(y, m, 1), fin
+
+
+def _datos_dashboard(desde, hasta, moneda, segmento):
+    if segmento not in SEGMENTOS:
+        raise HTTPException(422, f"segmento debe ser uno de: {', '.join(SEGMENTOS)}")
+    d_def, h_def = _rango_por_defecto()
+    d = date.fromisoformat(_validar_fecha(desde)) if desde else d_def
+    h = date.fromisoformat(_validar_fecha(hasta)) if hasta else h_def
+    if d > h:
+        raise HTTPException(422, "'desde' no puede ser posterior a 'hasta'")
+    d = d.replace(day=1)
+    meses = _meses_entre(d, h)
+    if len(meses) > 120:
+        raise HTTPException(422, "El rango máximo es de 10 años")
+
+    with db.connect() as conn:
+        monedas = [r["moneda"] for r in conn.execute(
+            "SELECT moneda, COUNT(*) c FROM movimientos GROUP BY moneda ORDER BY c DESC").fetchall()]
+        moneda = (moneda or (monedas[0] if monedas else "ARS")).upper()
+        base = "FROM movimientos WHERE moneda = ? AND fecha_factura BETWEEN ? AND ?"
+        params = (moneda, d.isoformat(), h.isoformat())
+        por_mes = conn.execute(
+            f"SELECT substr(fecha_factura, 1, 7) mes, tipo, SUM(monto) total, COUNT(*) c {base} GROUP BY mes, tipo",
+            params).fetchall()
+        seg_rows = conn.execute(
+            f"SELECT {SEGMENTOS[segmento]} seg, tipo, substr(fecha_factura, 1, 7) mes, SUM(monto) total, COUNT(*) c "
+            f"{base} GROUP BY seg, tipo, mes", params).fetchall()
+
+    idx = {m: i for i, m in enumerate(meses)}
+    filas_mes = [{"mes": m, "ingresos": 0.0, "egresos": 0.0, "cantidad": 0} for m in meses]
+    for r in por_mes:
+        f = filas_mes[idx[r["mes"]]]
+        f["ingresos" if r["tipo"] == "ingreso" else "egresos"] += r["total"]
+        f["cantidad"] += r["c"]
+    acumulado = 0.0
+    for f in filas_mes:
+        f["ingresos"], f["egresos"] = round(f["ingresos"], 2), round(f["egresos"], 2)
+        f["saldo"] = round(f["ingresos"] - f["egresos"], 2)
+        acumulado += f["saldo"]
+        f["acumulado"] = round(acumulado, 2)
+
+    ingresos = round(sum(f["ingresos"] for f in filas_mes), 2)
+    egresos = round(sum(f["egresos"] for f in filas_mes), 2)
+
+    segmentos = {}
+    for tipo in ("ingreso", "egreso"):
+        agregados: dict[str, dict] = {}
+        for r in seg_rows:
+            if r["tipo"] != tipo:
+                continue
+            a = agregados.setdefault(r["seg"], {"nombre": r["seg"], "total": 0.0, "cantidad": 0, "meses": [0.0] * len(meses)})
+            a["total"] += r["total"]
+            a["cantidad"] += r["c"]
+            a["meses"][idx[r["mes"]]] += r["total"]
+        orden = sorted(agregados.values(), key=lambda a: -a["total"])
+        if len(orden) > MAX_SEGMENTOS:
+            resto = orden[MAX_SEGMENTOS - 1:]
+            otros = {"nombre": f"Otros ({len(resto)})", "total": sum(a["total"] for a in resto),
+                     "cantidad": sum(a["cantidad"] for a in resto),
+                     "meses": [sum(a["meses"][i] for a in resto) for i in range(len(meses))]}
+            orden = orden[:MAX_SEGMENTOS - 1] + [otros]
+        total_tipo = ingresos if tipo == "ingreso" else egresos
+        for a in orden:
+            a["total"] = round(a["total"], 2)
+            a["meses"] = [round(v, 2) for v in a["meses"]]
+            a["pct"] = round(100 * a["total"] / total_tipo, 1) if total_tipo else 0.0
+        segmentos[tipo] = orden
+
+    return {
+        "moneda": moneda,
+        "monedas": monedas or ["ARS"],
+        "desde": d.isoformat(),
+        "hasta": h.isoformat(),
+        "segmento": segmento,
+        "totales": {
+            "ingresos": ingresos,
+            "egresos": egresos,
+            "saldo": round(ingresos - egresos, 2),
+            "margen": round(100 * (ingresos - egresos) / ingresos, 1) if ingresos else None,
+            "cantidad": sum(f["cantidad"] for f in filas_mes),
+            "promedio_egresos": round(egresos / len(meses), 2),
+        },
+        "meses": filas_mes,
+        "segmentos": segmentos,
+    }
+
+
+@app.get("/api/dashboard")
+def dashboard(desde: str | None = None, hasta: str | None = None, moneda: str | None = None,
+              segmento: str = "categoria"):
+    return _datos_dashboard(desde, hasta, moneda, segmento)
+
+
+@app.get("/api/dashboard.csv")
+def dashboard_csv(desde: str | None = None, hasta: str | None = None, moneda: str | None = None,
+                  segmento: str = "categoria"):
+    """Hoja de resumen mensual + desglose por segmento, lista para Excel."""
+    d = _datos_dashboard(desde, hasta, moneda, segmento)
+    num = lambda v: f"{v:.2f}".replace(".", ",")
+    buf = io.StringIO()
+    buf.write("﻿")
+    w = csv.writer(buf, delimiter=";")
+    meses = [f["mes"] for f in d["meses"]]
+    w.writerow([f"Resumen mensual ({d['moneda']})", f"{d['desde']} a {d['hasta']}"])
+    w.writerow(["Mes", "Ingresos", "Egresos", "Saldo", "Saldo acumulado", "Movimientos"])
+    for f in d["meses"]:
+        w.writerow([f["mes"], num(f["ingresos"]), num(f["egresos"]), num(f["saldo"]), num(f["acumulado"]), f["cantidad"]])
+    t = d["totales"]
+    w.writerow(["Total", num(t["ingresos"]), num(t["egresos"]), num(t["saldo"]), "", t["cantidad"]])
+    for tipo, titulo in (("ingreso", "Ingresos"), ("egreso", "Egresos")):
+        w.writerow([])
+        w.writerow([f"{titulo} por {segmento}"])
+        w.writerow(["Segmento", *meses, "Total", "%"])
+        for s in d["segmentos"][tipo]:
+            w.writerow([s["nombre"], *map(num, s["meses"]), num(s["total"]), num(s["pct"])])
+    return Response(buf.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": 'attachment; filename="resumen_mensual.csv"'})
 
 
 # ---------------------------------------------------------------- Frontend

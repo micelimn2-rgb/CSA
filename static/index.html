@@ -13,10 +13,14 @@
 <body>
   <header class="topbar">
     <h1>CSA <span>Ingresos y Gastos</span></h1>
+    <nav class="tabs" aria-label="Secciones">
+      <a href="#movimientos" data-vista="movimientos" class="activo">Movimientos</a>
+      <a href="#dashboard" data-vista="dashboard">Dashboard</a>
+    </nav>
     <button id="btn-nuevo" class="btn primary">+ Nuevo</button>
   </header>
 
-  <main>
+  <main id="vista-movimientos">
     <section id="resumen" class="resumen" aria-live="polite"></section>
 
     <section class="filtros">
@@ -33,6 +37,92 @@
 
     <section id="lista" class="lista"></section>
   </main>
+
+  <main id="vista-dashboard" class="dash" hidden>
+    <section class="filtros">
+      <label>Período
+        <select id="d-periodo">
+          <option value="12m">Últimos 12 meses</option>
+          <option value="anio">Este año</option>
+          <option value="anio-1">Año anterior</option>
+          <option value="6m">Últimos 6 meses</option>
+          <option value="custom">Personalizado…</option>
+        </select>
+      </label>
+      <span id="d-custom" class="custom" hidden>
+        <label>Desde <input id="d-desde" type="month"></label>
+        <label>Hasta <input id="d-hasta" type="month"></label>
+      </span>
+      <label>Moneda <select id="d-moneda"></select></label>
+      <label>Segmentar por
+        <select id="d-segmento">
+          <option value="categoria">Categoría</option>
+          <option value="tercero">Proveedor / Cliente</option>
+          <option value="factura">Con factura / Manual</option>
+        </select>
+      </label>
+      <a id="d-csv" class="btn" href="api/dashboard.csv">Descargar resumen</a>
+    </section>
+
+    <div id="dash-cuerpo">
+      <section class="kpis" id="d-kpis"></section>
+
+      <section class="card">
+        <header class="card-head">
+          <div>
+            <h2>Ingresos y egresos por mes</h2>
+            <p class="sub" id="d-sub-meses"></p>
+          </div>
+          <div class="leyenda">
+            <span><i class="key ingreso"></i>Ingresos</span>
+            <span><i class="key egreso"></i>Egresos</span>
+          </div>
+        </header>
+        <div class="chart" id="ch-meses"></div>
+      </section>
+
+      <section class="card">
+        <header class="card-head">
+          <div>
+            <h2>Saldo acumulado</h2>
+            <p class="sub">Ingresos menos egresos, sumado mes a mes dentro del período</p>
+          </div>
+        </header>
+        <div class="chart" id="ch-saldo"></div>
+      </section>
+
+      <div class="dos-col">
+        <section class="card">
+          <header class="card-head"><div><h2 id="t-seg-egreso">Egresos por segmento</h2><p class="sub">Total del período y % sobre egresos</p></div></header>
+          <div id="ch-seg-egreso" class="barras-h"></div>
+        </section>
+        <section class="card">
+          <header class="card-head"><div><h2 id="t-seg-ingreso">Ingresos por segmento</h2><p class="sub">Total del período y % sobre ingresos</p></div></header>
+          <div id="ch-seg-ingreso" class="barras-h"></div>
+        </section>
+      </div>
+
+      <section class="card">
+        <header class="card-head">
+          <div><h2>Hoja de resumen mensual</h2><p class="sub">Mismos datos que los gráficos</p></div>
+        </header>
+        <div class="tabla-scroll"><table class="tabla" id="tb-meses"></table></div>
+      </section>
+
+      <section class="card">
+        <header class="card-head">
+          <div><h2 id="t-matriz">Detalle por segmento y mes</h2><p class="sub">Cuanto más intenso, mayor el monto</p></div>
+          <div class="seg" role="group" aria-label="Tipo" id="d-matriz-tipo">
+            <button data-tipo="egreso" class="activo">Egresos</button>
+            <button data-tipo="ingreso">Ingresos</button>
+          </div>
+        </header>
+        <div class="tabla-scroll"><table class="tabla matriz" id="tb-matriz"></table></div>
+      </section>
+    </div>
+  </main>
+
+  <div id="tooltip" class="tooltip" role="status" hidden></div>
 
   <dialog id="dlg">
     <form id="form" method="dialog" novalidate>
@@ -106,5 +196,6 @@
   </dialog>
 
   <script src="app.js"></script>
+  <script src="dashboard.js"></script>
 </body>
 </html>

@@ -176,6 +176,7 @@ async function guardar(ev) {
     const url = estado.editandoId ? `api/movimientos/${estado.editandoId}` : "api/movimientos";
     await api(url, { method: estado.editandoId ? "PUT" : "POST", body: fd });
     dlg.close();
+    document.dispatchEvent(new Event("movimientos-cambiaron"));
     await Promise.all([cargar(), cargarCategorias()]);
   } catch (e) {
     err.textContent = e.message;
@@ -189,6 +190,7 @@ async function borrar() {
   if (!estado.editandoId || !confirm("¿Eliminar este movimiento y su factura adjunta?")) return;
   await api(`api/movimientos/${estado.editandoId}`, { method: "DELETE" });
   dlg.close();
+  document.dispatchEvent(new Event("movimientos-cambiaron"));
   cargar();
 }
 

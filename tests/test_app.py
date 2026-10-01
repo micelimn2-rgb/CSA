@@ -151,3 +151,44 @@ def test_password_opcional(client, monkeypatch):
     monkeypatch.setenv("APP_PASSWORD", "secreto")
     assert client.get("/api/movimientos").status_code == 401
     assert client.get("/api/movimientos", auth=("admin", "secreto")).status_code == 200
+
+
+def test_dashboard_resumen_mensual_y_segmentos(client):
+    alta = lambda **d: client.post("/api/movimientos", data=d)
+    alta(tipo="ingreso", monto="1000", fecha_factura="2026-01-10", categoria="Ventas", tercero="Pérez")
+    alta(tipo="egreso", monto="300", fecha_factura="2026-01-20", categoria="Servicios", tercero="Edenor", numero_factura="A-1")
+    alta(tipo="egreso", monto="200", fecha_factura="2026-03-05", categoria="")
+    alta(tipo="egreso", monto="99", fecha_factura="2026-03-05", moneda="USD")
+    alta(tipo="egreso", monto="5", fecha_factura="2025-12-31")  # fuera de rango
+
+    d = client.get("/api/dashboard", params={"desde": "2026-01-01", "hasta": "2026-03-31"}).json()
+    assert d["moneda"] == "ARS" and set(d["monedas"]) == {"ARS", "USD"}
+    assert [m["mes"] for m in d["meses"]] == ["2026-01", "2026-02", "2026-03"]
+    assert d["meses"][0] == {"mes": "2026-01", "ingresos": 1000, "egresos": 300, "cantidad": 2, "saldo": 700, "acumulado": 700}
+    assert d["meses"][1]["cantidad"] == 0 and d["meses"][1]["acumulado"] == 700
+    assert d["meses"][2]["acumulado"] == 500
+    assert d["totales"]["ingresos"] == 1000 and d["totales"]["egresos"] == 500 and d["totales"]["margen"] == 50.0
+
+    eg = {s["nombre"]: s for s in d["segmentos"]["egreso"]}
+    assert eg["Servicios"]["total"] == 300 and eg["Servicios"]["pct"] == 60.0
+    assert eg["Sin categoría"]["meses"] == [0, 0, 200]
+
+    f = client.get("/api/dashboard", params={"desde": "2026-01-01", "hasta": "2026-03-31", "segmento": "factura"}).json()
+    assert {s["nombre"] for s in f["segmentos"]["egreso"]} == {"Con n.º de factura", "Manual (sin factura)"}
+
+    usd = client.get("/api/dashboard", params={"desde": "2026-01-01", "hasta": "2026-03-31", "moneda": "USD"}).json()
+    assert usd["totales"]["egresos"] == 99
+
+    assert client.get("/api/dashboard", params={"segmento": "x"}).status_code == 422
+    assert client.get("/api/dashboard", params={"desde": "2026-05-01", "hasta": "2026-01-01"}).status_code == 422
+
+    csv = client.get("/api/dashboard.csv", params={"desde": "2026-01-01", "hasta": "2026-03-31"}).text
+    assert "2026-01;1000,00;300,00;700,00;700,00;2" in csv and "Servicios" in csv
+
+
+def test_dashboard_agrupa_otros(client):
+    for i in range(12):
+        client.post("/api/movimientos", data={"tipo": "egreso", "monto": str(100 + i), "categoria": f"Cat {i}"})
+    segs = client.get("/api/dashboard").json()["segmentos"]["egreso"]
+    assert len(segs) == 8 and segs[-1]["nombre"] == "Otros (5)"
+    assert round(sum(s["pct"] for s in segs)) == 100
