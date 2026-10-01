@@ -1,0 +1,135 @@
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --text: #1c2430;
+  --muted: #5f6b7a;
+  --border: #dde3ea;
+  --primary: #0f766e;
+  --primary-text: #ffffff;
+  --ingreso: #15803d;
+  --egreso: #b91c1c;
+  --ingreso-bg: #e7f6ec;
+  --egreso-bg: #fbeaea;
+  --radius: 12px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141a;
+    --surface: #18202a;
+    --text: #e6ebf1;
+    --muted: #9aa6b4;
+    --border: #2a3542;
+    --primary: #14b8a6;
+    --primary-text: #062a26;
+    --ingreso: #4ade80;
+    --egreso: #f87171;
+    --ingreso-bg: #12301f;
+    --egreso-bg: #3a1717;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 960px; margin: 0 auto; padding: 16px; }
+
+.topbar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px; padding-top: max(12px, env(safe-area-inset-top));
+  background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.topbar h1 { margin: 0; font-size: 1.15rem; }
+.topbar h1 span { color: var(--muted); font-weight: 500; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 40px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text);
+  font: inherit; font-weight: 600; text-decoration: none; cursor: pointer;
+}
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+.btn.peligro { color: var(--egreso); border-color: var(--egreso); }
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn:disabled { opacity: .6; cursor: progress; }
+
+.resumen { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 16px; }
+.tarjeta { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.tarjeta h3 { margin: 0 0 6px; font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tarjeta .fila { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+.tarjeta .saldo { font-size: 1.25rem; font-weight: 700; margin-top: 4px; border-top: 1px solid var(--border); padding-top: 6px; }
+
+.ing { color: var(--ingreso); }
+.egr { color: var(--egreso); }
+
+.filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.filtros input[type=search] { flex: 1 1 200px; }
+.filtros label { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: .9rem; }
+input, select, textarea {
+  width: 100%; min-height: 40px; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); color: var(--text); font: inherit;
+}
+.filtros input { width: auto; }
+input[readonly] { color: var(--muted); }
+
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); color: var(--text); padding: 8px 12px; font: inherit; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.activo { background: var(--primary); color: var(--primary-text); }
+.seg.grande { display: flex; margin-bottom: 12px; }
+.seg.grande button { flex: 1; padding: 12px; font-weight: 700; }
+.seg.grande button.egreso.activo { background: var(--egreso); color: #fff; }
+.seg.grande button.ingreso.activo { background: var(--ingreso); color: #fff; }
+
+.lista { display: grid; gap: 8px; }
+.item {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 12px;
+  background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--border);
+  border-radius: var(--radius); padding: 10px 12px; cursor: pointer; text-align: left;
+  font: inherit; color: inherit; width: 100%;
+}
+.item.ingreso { border-left-color: var(--ingreso); }
+.item.egreso { border-left-color: var(--egreso); }
+.item .titulo { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .monto { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.item .meta { color: var(--muted); font-size: .85rem; }
+.item .chips { text-align: right; font-size: .8rem; }
+.chip { display: inline-block; padding: 1px 8px; border-radius: 99px; background: var(--bg); border: 1px solid var(--border); color: var(--muted); }
+.vacio { text-align: center; color: var(--muted); padding: 40px 0; }
+
+dialog {
+  width: min(640px, calc(100vw - 16px)); max-height: calc(100dvh - 16px);
+  border: 1px solid var(--border); border-radius: 16px; padding: 0;
+  background: var(--surface); color: var(--text);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+dialog form { padding: 16px; }
+.dlg-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.dlg-head h2 { margin: 0; font-size: 1.1rem; }
+.adjunto { border: 1px dashed var(--border); border-radius: var(--radius); margin: 0 0 12px; padding: 10px 12px; }
+.adjunto legend { color: var(--muted); font-size: .85rem; padding: 0 4px; }
+.adj-opciones { display: flex; gap: 8px; flex-wrap: wrap; }
+.nota { margin: 8px 0 0; color: var(--muted); font-size: .9rem; }
+.nota.ok { color: var(--ingreso); }
+.nota.aviso { color: var(--egreso); }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid label { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; color: var(--muted); }
+.grid .ancho { grid-column: 1 / -1; }
+.error { color: var(--egreso); margin: 10px 0 0; }
+.dlg-pie { display: flex; gap: 8px; margin-top: 16px; }
+.flex { flex: 1; }
+
+@media (max-width: 520px) {
+  .grid { grid-template-columns: 1fr; }
+  .filtros label { flex: 1 1 45%; }
+  .filtros label input { flex: 1; min-width: 0; }
+  .topbar h1 span { display: none; }
+}

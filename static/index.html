@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>CSA · Ingresos y Gastos</title>
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>CSA <span>Ingresos y Gastos</span></h1>
+    <button id="btn-nuevo" class="btn primary">+ Nuevo</button>
+  </header>
+
+  <main>
+    <section id="resumen" class="resumen" aria-live="polite"></section>
+
+    <section class="filtros">
+      <div class="seg" role="group" aria-label="Tipo">
+        <button data-tipo="" class="activo">Todos</button>
+        <button data-tipo="ingreso">Ingresos</button>
+        <button data-tipo="egreso">Egresos</button>
+      </div>
+      <input id="f-q" type="search" placeholder="Buscar proveedor, detalle, n.º…">
+      <label>Desde <input id="f-desde" type="date"></label>
+      <label>Hasta <input id="f-hasta" type="date"></label>
+      <a id="btn-csv" class="btn" href="api/exportar.csv">Exportar CSV</a>
+    </section>
+
+    <section id="lista" class="lista"></section>
+  </main>
+
+  <dialog id="dlg">
+    <form id="form" method="dialog" novalidate>
+      <header class="dlg-head">
+        <h2 id="dlg-titulo">Nuevo movimiento</h2>
+        <button type="button" class="btn ghost" data-cerrar aria-label="Cerrar">✕</button>
+      </header>
+
+      <div class="seg grande" role="group" aria-label="Tipo de movimiento">
+        <button type="button" data-valor="egreso" class="activo egreso">Egreso / Gasto</button>
+        <button type="button" data-valor="ingreso" class="ingreso">Ingreso</button>
+      </div>
+      <input type="hidden" name="tipo" value="egreso">
+
+      <fieldset class="adjunto">
+        <legend>Factura</legend>
+        <div class="adj-opciones">
+          <label class="btn">📎 Adjuntar archivo
+            <input id="in-archivo" type="file" accept="application/pdf,image/*" hidden>
+          </label>
+          <label class="btn">📷 Sacar foto
+            <input id="in-foto" type="file" accept="image/*" capture="environment" hidden>
+          </label>
+        </div>
+        <p id="adj-estado" class="nota">Sin factura: cargá el gasto manualmente.</p>
+        <div id="adj-actual" class="nota" hidden></div>
+      </fieldset>
+
+      <div class="grid">
+        <label>Monto *
+          <input name="monto" type="number" inputmode="decimal" step="0.01" min="0" required>
+        </label>
+        <label>Moneda
+          <select name="moneda">
+            <option>ARS</option><option>USD</option><option>EUR</option>
+          </select>
+        </label>
+        <label>Fecha de la factura *
+          <input name="fecha_factura" type="date" required>
+        </label>
+        <label>Fecha de carga
+          <input id="fecha-carga" type="text" readonly tabindex="-1">
+        </label>
+        <label class="ancho">Proveedor / Cliente
+          <input name="tercero" type="text" autocomplete="off">
+        </label>
+        <label>CUIT
+          <input name="cuit" type="text" inputmode="numeric">
+        </label>
+        <label>N.º de factura
+          <input name="numero_factura" type="text">
+        </label>
+        <label class="ancho">Categoría
+          <input name="categoria" type="text" list="categorias" placeholder="Ej.: Servicios, Sueldos, Ventas…">
+          <datalist id="categorias"></datalist>
+        </label>
+        <label class="ancho">Detalle / Referencias
+          <textarea name="descripcion" rows="3"></textarea>
+        </label>
+      </div>
+
+      <p id="form-error" class="error" role="alert" hidden></p>
+
+      <footer class="dlg-pie">
+        <button type="button" id="btn-borrar" class="btn peligro" hidden>Eliminar</button>
+        <span class="flex"></span>
+        <button type="button" class="btn" data-cerrar>Cancelar</button>
+        <button type="submit" id="btn-guardar" class="btn primary">Guardar</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
