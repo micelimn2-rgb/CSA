@@ -13,6 +13,27 @@ const fmt = (n, moneda = "ARS") =>
 const fmtFecha = (iso) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// ------------------------------------------------------------ Versión
+// Si se actualizan los archivos con la app abierta, el servidor sigue con el código viejo.
+const VERSION_WEB = "5";
+
+async function verificarVersion() {
+  let version = null;
+  try {
+    const r = await fetch("api/version", { cache: "no-store" });
+    if (r.ok) version = (await r.json()).version;
+  } catch {}
+  if (version === VERSION_WEB) return;
+  const aviso = document.createElement("div");
+  aviso.className = "aviso-version";
+  aviso.setAttribute("role", "alert");
+  aviso.innerHTML = version === null && !navigator.onLine
+    ? "No hay conexión con la app."
+    : "<b>La app se actualizó, pero el servidor sigue con la versión anterior.</b> " +
+      "Cerrá <b>todas</b> las ventanas negras de la app y volvé a abrir <b>iniciar.bat</b>. Después recargá esta página.";
+  document.body.prepend(aviso);
+}
+
 // ------------------------------------------------------------ Empresa activa
 // Todo lo que se ve y se carga corresponde a la empresa elegida arriba.
 
@@ -313,6 +334,7 @@ document.addEventListener("empresa-cambiada", () => {
 });
 
 // Las demás pantallas esperan a saber qué empresa mostrar
-const listo = cargarEmpresas()
+const listo = verificarVersion()
+  .then(cargarEmpresas)
   .then(() => Promise.all([cargar(), cargarCategorias()]))
   .catch((e) => ($("#lista").innerHTML = `<p class="vacio">No se pudo conectar: ${esc(e.message)}</p>`));

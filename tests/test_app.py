@@ -200,3 +200,11 @@ def test_dashboard_agrupa_otros(client):
     segs = client.get("/api/dashboard").json()["segmentos"]["egreso"]
     assert len(segs) == 8 and segs[-1]["nombre"] == "Otros (5)"
     assert round(sum(s["pct"] for s in segs)) == 100
+
+
+def test_version_coincide_con_la_web(client):
+    from pathlib import Path
+    from app import VERSION
+    assert client.get("/api/version").json() == {"version": VERSION}
+    web = (Path(__file__).resolve().parent.parent / "static" / "app.js").read_text(encoding="utf-8")
+    assert f'const VERSION_WEB = "{VERSION}";' in web

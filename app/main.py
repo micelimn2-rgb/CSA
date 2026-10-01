@@ -13,7 +13,7 @@ from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFil
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import db, extractor
+from . import VERSION, db, extractor
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 MAX_ADJUNTO = 15 * 1024 * 1024  # 15 MB
@@ -40,6 +40,11 @@ async def basic_auth(request: Request, call_next):
         if not ok:
             return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="CSA"'})
     return await call_next(request)
+
+
+@app.get("/api/version")
+def version():
+    return {"version": VERSION}
 
 
 # ---------------------------------------------------------------- Helpers
