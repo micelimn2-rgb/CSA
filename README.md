@@ -91,7 +91,6 @@ tests/            Tests automáticos
 | GET / PUT | `/api/ajustes` | CUIT propios de la empresa (`{"cuits_propios": [...]}`) |
 | GET / POST | `/api/empresas` | Listar / crear empresas |
 | PUT / DELETE | `/api/empresas/{id}` | Renombrar o cambiar CUIT / borrar (solo si no tiene movimientos) |
-
 | GET | `/api/resumen` | Totales por moneda |
 | GET | `/api/exportar.csv` | Exportación |
 | GET | `/api/dashboard?desde=&hasta=&moneda=&segmento=categoria\|tercero\|factura` | Resumen mensual y segmentación |
