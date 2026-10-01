@@ -24,7 +24,14 @@ computadora o el celular, y en el celular se puede instalar como app
   - Filtros de período (últimos 12 meses, este año, año anterior, últimos 6 meses o personalizado) y moneda.
 - **Base de datos**: SQLite en `data/csa.db`. Las facturas se guardan en `data/facturas/`.
 
-## Cómo levantarla
+## Cómo probarla (doble clic)
+
+1. Instalá Python desde https://www.python.org/downloads/ (en Windows tildá **"Add Python to PATH"**).
+2. Descargá este proyecto (botón **Code → Download ZIP**) y descomprimilo.
+3. Doble clic en **`iniciar.bat`** (Windows) o **`iniciar.command`** (Mac).
+4. Se abre el navegador solo. La ventana negra muestra también la dirección para entrar desde el celular.
+
+## Cómo levantarla (por consola)
 
 ```bash
 pip install -r requirements.txt
