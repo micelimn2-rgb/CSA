@@ -29,7 +29,7 @@ computadora o el celular, y en el celular se puede instalar como app
   - **Hoja de resumen mensual** (mes, ingresos, egresos, saldo, acumulado, cantidad), descargable para Excel.
   - Filtros de período (últimos 12 meses, este año, año anterior, últimos 6 meses o personalizado) y moneda.
 - **Varias empresas** (vienen creadas **Solvencias** y **Agencia**): se elige arriba y todo queda separado —movimientos, resumen, dashboard, categorías, exportaciones y CUIT propio—.
-  - Se pueden renombrar (✎) y agregar más (+ Empresa).
+  - Se pueden renombrar (✎), eliminar (🗑, solo si no tienen movimientos) y agregar más (+ Empresa).
   - La carga automática manda cada comprobante a la empresa cuyo CUIT figura en él, aunque estés viendo la otra.
   - Un movimiento se puede pasar a otra empresa desde su edición.
   - Lo cargado antes de separar por empresas quedó en la primera (Solvencias).

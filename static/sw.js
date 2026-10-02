@@ -1,7 +1,7 @@
 // Service worker mínimo: permite instalar la web como app en el celular.
 // Siempre va a la red (los datos viven en el servidor); si no hay conexión
 // muestra la última versión guardada de la interfaz.
-const CACHE = "csa-v5";
+const CACHE = "csa-v6";
 const ESTATICOS = ["./", "index.html", "styles.css", "app.js", "dashboard.js", "carga.js", "manifest.json", "icon.svg"];
 
 self.addEventListener("install", (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ESTATICOS))));

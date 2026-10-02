@@ -15,7 +15,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 // ------------------------------------------------------------ Versión
 // Si se actualizan los archivos con la app abierta, el servidor sigue con el código viejo.
-const VERSION_WEB = "5";
+const VERSION_WEB = "6";
 
 async function verificarVersion() {
   let version = null;
@@ -98,6 +98,25 @@ $("#btn-empresa-nueva").onclick = async () => {
     elegirEmpresa(e.id);
   } catch (err) { alert(err.message); }
 };
+$("#btn-empresa-borrar").onclick = async () => {
+  empresas.lista = await api("api/empresas"); // cantidades al día
+  const actual = empresaActual();
+  if (empresas.lista.length <= 1) return alert("Tiene que quedar al menos una empresa.");
+  const cant = actual.movimientos || 0;
+  if (cant) {
+    return alert(`No se puede eliminar ${actual.nombre}: tiene ${cant} movimiento${cant === 1 ? "" : "s"}.\n` +
+      "Pasalos a otra empresa (abriendo cada uno y cambiando \"Empresa\") o borralos, y después eliminala.");
+  }
+  if (!confirm(`¿Eliminar la empresa "${actual.nombre}"?`)) return;
+  try {
+    await api(`api/empresas/${actual.id}`, { method: "DELETE" });
+    empresas.id = null;
+    await cargarEmpresas();
+    recordarEmpresa(empresas.id);
+    document.dispatchEvent(new Event("empresa-cambiada"));
+  } catch (err) { alert(err.message); }
+};
+
 $("#btn-empresa-renombrar").onclick = async () => {
   const actual = empresaActual();
   const nombre = prompt("Nuevo nombre para la empresa:", actual.nombre);
