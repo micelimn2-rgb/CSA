@@ -2,6 +2,7 @@
 import base64
 import csv
 import io
+import json
 import os
 import re
 import secrets
@@ -104,7 +105,29 @@ def _fila(row) -> dict:
     d["tiene_factura"] = bool(d["tiene_factura"])
     d["tiene_adjunto"] = bool(d.pop("adjunto_archivo"))
     d["revisar"] = bool(d.get("revisar"))
+    d["desglose"] = json.loads(d["desglose"]) if d.get("desglose") else None
     return d
+
+
+def _validar_desglose(valor) -> tuple[str | None, float | None]:
+    """Valida el desglose (bruto + deducciones). Devuelve (json, neto) o (None, None) si no hay."""
+    if valor in (None, "", "null"):
+        return None, None
+    try:
+        d = json.loads(valor) if isinstance(valor, str) else valor
+        bruto = round(float(d["bruto"]), 2)
+        items = [{"concepto": str(i["concepto"]).strip()[:60] or "Deducción",
+                  "importe": -round(abs(float(i["importe"])), 2)} for i in d.get("items", []) if float(i["importe"])]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        raise HTTPException(422, "Desglose inválido")
+    if bruto < 0:
+        raise HTTPException(422, "El importe bruto no puede ser negativo")
+    neto = round(bruto + sum(i["importe"] for i in items), 2)
+    if neto < 0:
+        raise HTTPException(422, "Las deducciones superan el importe bruto")
+    if not items:
+        return None, None
+    return json.dumps({"bruto": bruto, "items": items}, ensure_ascii=False), neto
 
 
 def _obtener(conn, mov_id: int):
@@ -212,6 +235,7 @@ async def crear(
     cuit: str | None = Form(None),
     categoria: str | None = Form(None),
     descripcion: str | None = Form(None),
+    desglose: str | None = Form(None),
     archivo: UploadFile | None = File(None),
 ):
     adjunto = adjunto_nombre = adjunto_tipo = None
@@ -224,21 +248,23 @@ async def crear(
         eid = _empresa_id(conn, empresa_id or empresa)
         mov_id = _insertar(conn, eid, dict(tipo=tipo, monto=monto, moneda=moneda, fecha_factura=fecha_factura,
                                       numero_factura=numero_factura, tercero=tercero, cuit=cuit, categoria=categoria,
-                                      descripcion=descripcion), (adjunto, adjunto_nombre, adjunto_tipo))
+                                      descripcion=descripcion, desglose=desglose), (adjunto, adjunto_nombre, adjunto_tipo))
         return _fila(_obtener(conn, mov_id))
 
 
 def _insertar(conn, empresa_id: int, c: dict, adjunto: tuple, origen: str = "manual", revisar: bool = False) -> int:
     numero = _vacio(c.get("numero_factura"))
+    desglose, neto = _validar_desglose(c.get("desglose"))
+    monto = neto if neto is not None else float(c["monto"])  # con desglose, el monto es el neto
     cur = conn.execute(
         """INSERT INTO movimientos (tipo, monto, moneda, fecha_factura, fecha_carga, numero_factura, tercero,
                cuit, categoria, descripcion, tiene_factura, adjunto_archivo, adjunto_nombre, adjunto_tipo,
-               origen, revisar, empresa_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (_validar_tipo(c["tipo"]), _validar_monto(float(c["monto"])), (c.get("moneda") or "ARS").upper()[:5],
+               origen, revisar, empresa_id, desglose)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (_validar_tipo(c["tipo"]), _validar_monto(monto), (c.get("moneda") or "ARS").upper()[:5],
          _validar_fecha(c.get("fecha_factura")), _ahora(), numero, _vacio(c.get("tercero")), _vacio(c.get("cuit")),
          _vacio(c.get("categoria")), _vacio(c.get("descripcion")), int(bool(adjunto[0] or numero)),
-         *adjunto, origen, int(revisar), empresa_id),
+         *adjunto, origen, int(revisar), empresa_id, desglose),
     )
     return cur.lastrowid
 
@@ -257,6 +283,7 @@ async def actualizar(
     descripcion: str | None = Form(None),
     quitar_adjunto: bool = Form(False),
     empresa_id: int | None = Form(None),
+    desglose: str | None = Form(None),
     archivo: UploadFile | None = File(None),
 ):
     with db.connect() as conn:
@@ -272,13 +299,16 @@ async def actualizar(
             adjunto, adjunto_nombre, adjunto_tipo = nuevo or (None, None, None)
 
         tiene_factura = bool(adjunto or (numero_factura or "").strip())
+        desglose_json, neto = _validar_desglose(desglose)
+        if neto is not None:
+            monto = neto
         conn.execute(
             """UPDATE movimientos SET tipo=?, monto=?, moneda=?, fecha_factura=?, numero_factura=?, tercero=?, cuit=?,
                    categoria=?, descripcion=?, tiene_factura=?, adjunto_archivo=?, adjunto_nombre=?, adjunto_tipo=?,
-                   actualizado=?, revisar=0, empresa_id=? WHERE id=?""",
+                   actualizado=?, revisar=0, empresa_id=?, desglose=? WHERE id=?""",
             (_validar_tipo(tipo), _validar_monto(monto), (moneda or "ARS").upper()[:5], _validar_fecha(fecha_factura),
              _vacio(numero_factura), _vacio(tercero), _vacio(cuit), _vacio(categoria), _vacio(descripcion),
-             int(tiene_factura), adjunto, adjunto_nombre, adjunto_tipo, _ahora(), eid, mov_id),
+             int(tiene_factura), adjunto, adjunto_nombre, adjunto_tipo, _ahora(), eid, desglose_json, mov_id),
         )
         return _fila(_obtener(conn, mov_id))
 
@@ -487,14 +517,20 @@ def exportar(empresa: int | None = None, tipo: str | None = None, desde: str | N
     filas = listar(empresa, tipo, desde, hasta, q, categoria, limite=5000)
     with db.connect() as conn:
         nombre = conn.execute("SELECT nombre FROM empresas WHERE id = ?", (_empresa_id(conn, empresa),)).fetchone()[0]
-    columnas = ["id", "tipo", "fecha_factura", "fecha_carga", "monto", "moneda", "numero_factura", "tercero",
-                "cuit", "categoria", "descripcion", "tiene_factura", "adjunto_nombre"]
+    columnas = ["id", "tipo", "fecha_factura", "fecha_carga", "monto", "moneda", "bruto", "deducciones",
+                "detalle_deducciones", "numero_factura", "tercero", "cuit", "categoria", "descripcion",
+                "tiene_factura", "adjunto_nombre"]
+    num = lambda v: f"{v:.2f}".replace(".", ",")
     buf = io.StringIO()
     buf.write("﻿")  # BOM para que Excel respete los acentos
     w = csv.DictWriter(buf, fieldnames=columnas, extrasaction="ignore", delimiter=";")
     w.writeheader()
     for f in filas:
-        w.writerow({**f, "monto": f"{f['monto']:.2f}".replace(".", ","), "tiene_factura": "Sí" if f["tiene_factura"] else "No"})
+        des = f["desglose"] or {"bruto": f["monto"], "items": []}
+        w.writerow({**f, "monto": num(f["monto"]), "bruto": num(des["bruto"]),
+                    "deducciones": num(-sum(i["importe"] for i in des["items"])),
+                    "detalle_deducciones": " | ".join(f"{i['concepto']}: {num(-i['importe'])}" for i in des["items"]),
+                    "tiene_factura": "Sí" if f["tiene_factura"] else "No"})
     buf.seek(0)
     return StreamingResponse(iter([buf.getvalue()]), media_type="text/csv; charset=utf-8",
                              headers={"Content-Disposition": f'attachment; filename="movimientos_{_archivo_seguro(nombre)}.csv"'})
@@ -567,6 +603,28 @@ def _datos_dashboard(empresa, desde, hasta, moneda, segmento):
         seg_rows = conn.execute(
             f"SELECT {SEGMENTOS[segmento]} seg, tipo, substr(fecha_factura, 1, 7) mes, SUM(monto) total, COUNT(*) c "
             f"{base} GROUP BY seg, tipo, mes", params).fetchall()
+        desgloses = conn.execute(f"SELECT tipo, desglose {base} AND desglose IS NOT NULL", params).fetchall()
+
+    # Retenciones/deducciones: en ingresos son las que te practicaron (pagos a cuenta de impuestos)
+    deducciones = {}
+    for tipo in ("ingreso", "egreso"):
+        por_concepto: dict[str, dict] = {}
+        bruto = 0.0
+        for r in desgloses:
+            if r["tipo"] != tipo:
+                continue
+            des = json.loads(r["desglose"])
+            bruto += des["bruto"]
+            for item in des["items"]:
+                c = por_concepto.setdefault(item["concepto"], {"nombre": item["concepto"], "total": 0.0, "cantidad": 0})
+                c["total"] += -item["importe"]
+                c["cantidad"] += 1
+        total = round(sum(c["total"] for c in por_concepto.values()), 2)
+        conceptos = sorted(por_concepto.values(), key=lambda c: -c["total"])
+        for c in conceptos:
+            c["total"] = round(c["total"], 2)
+            c["pct"] = round(100 * c["total"] / total, 1) if total else 0.0
+        deducciones[tipo] = {"total": total, "bruto": round(bruto, 2), "conceptos": conceptos}
 
     idx = {m: i for i, m in enumerate(meses)}
     filas_mes = [{"mes": m, "ingresos": 0.0, "egresos": 0.0, "cantidad": 0} for m in meses]
@@ -626,6 +684,7 @@ def _datos_dashboard(empresa, desde, hasta, moneda, segmento):
         },
         "meses": filas_mes,
         "segmentos": segmentos,
+        "deducciones": deducciones,
     }
 
 
@@ -657,6 +716,15 @@ def dashboard_csv(empresa: int | None = None, desde: str | None = None, hasta: s
         w.writerow(["Segmento", *meses, "Total", "%"])
         for s in d["segmentos"][tipo]:
             w.writerow([s["nombre"], *map(num, s["meses"]), num(s["total"]), num(s["pct"])])
+    for tipo, titulo in (("ingreso", "Retenciones sufridas (en ingresos)"), ("egreso", "Retenciones practicadas (en egresos)")):
+        ded = d["deducciones"][tipo]
+        if ded["conceptos"]:
+            w.writerow([])
+            w.writerow([titulo])
+            w.writerow(["Concepto", "Importe", "Comprobantes", "%"])
+            for c in ded["conceptos"]:
+                w.writerow([c["nombre"], num(c["total"]), c["cantidad"], num(c["pct"])])
+            w.writerow(["Total", num(ded["total"])])
     return Response(buf.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition":
                              f'attachment; filename="resumen_mensual_{_archivo_seguro(d["empresa"])}.csv"'})

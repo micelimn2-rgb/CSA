@@ -19,6 +19,7 @@ computadora o el celular, y en el celular se puede instalar como app
   - **Aprende**: si corregís el nombre o la categoría de un proveedor, los próximos comprobantes de ese CUIT ya vienen con esos datos.
   - Avisa si un comprobante **ya estaba cargado** (mismo n.º y monto).
   - Los movimientos cargados solos quedan marcados "⚡ a revisar" hasta que los abrís y guardás.
+- **Desglose bruto → retenciones → neto**: en avisos de pago (y donde haya retenciones o deducciones) el movimiento se registra por el **neto** efectivamente cobrado o pagado, guardando el bruto y cada retención (IVA, Ganancias, Ingresos Brutos, Seguridad Social, etc.). Se puede ver y cargar a mano desde la sección "Desglose" del formulario; el dashboard suma las **retenciones sufridas** por tipo (pagos a cuenta de impuestos) y las exportaciones las incluyen.
 - **Proveedor/cliente, CUIT, categoría y detalle/referencias.**
 - **Resumen** de ingresos, egresos y saldo por moneda, con **filtros** por tipo, fechas y texto.
 - **Exportación a CSV** (se abre en Excel).

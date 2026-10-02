@@ -15,7 +15,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 // ------------------------------------------------------------ Versión
 // Si se actualizan los archivos con la app abierta, el servidor sigue con el código viejo.
-const VERSION_WEB = "6";
+const VERSION_WEB = "7";
 
 async function verificarVersion() {
   let version = null;
@@ -188,7 +188,7 @@ function pintarLista(movs) {
       (m) => `<button class="item ${m.tipo}" data-id="${m.id}">
         <span class="titulo">${esc(m.tercero || m.descripcion || (m.tipo === "ingreso" ? "Ingreso" : "Gasto"))}</span>
         <span class="monto ${m.tipo === "ingreso" ? "ing" : "egr"}">${m.tipo === "ingreso" ? "+" : "−"} ${fmt(m.monto, m.moneda)}</span>
-        <span class="meta">${fmtFecha(m.fecha_factura)}${m.categoria ? " · " + esc(m.categoria) : ""}${m.numero_factura ? " · " + esc(m.numero_factura) : ""}</span>
+        <span class="meta">${m.desglose ? `Bruto ${fmt(m.desglose.bruto, m.moneda)} − ret. ${fmt(-m.desglose.items.reduce((a, x) => a + x.importe, 0), m.moneda)} · ` : ""}${fmtFecha(m.fecha_factura)}${m.categoria ? " · " + esc(m.categoria) : ""}${m.numero_factura ? " · " + esc(m.numero_factura) : ""}</span>
         <span class="chips">${m.revisar ? '<span class="chip pendiente">⚡ a revisar</span> ' : ""}${m.tiene_adjunto ? '<span class="chip">📎 comprobante</span>' : m.tiene_factura ? '<span class="chip">con factura</span>' : '<span class="chip">manual</span>'}</span>
       </button>`
     )
@@ -224,6 +224,7 @@ function abrir(mov = null) {
   setTipo(mov?.tipo || "egreso");
   form.fecha_factura.value = mov?.fecha_factura || hoy();
   form.empresa_id.value = mov?.empresa_id ?? empresas.id;
+  pintarDesglose(mov?.desglose || null);
   $("#fecha-carga").value = mov ? mov.fecha_carga : "Hoy (automática)";
   for (const campo of ["monto", "moneda", "tercero", "cuit", "numero_factura", "categoria", "descripcion"]) {
     if (mov && mov[campo] != null) form[campo].value = mov[campo];
@@ -263,6 +264,66 @@ async function alElegirArchivo(ev) {
   }
 }
 
+// ------------------------------------------------------------ Desglose (bruto - retenciones = neto)
+
+function filaDeduccion(concepto = "", importe = "") {
+  const fila = document.createElement("div");
+  fila.className = "des-fila";
+  const c = document.createElement("input");
+  c.type = "text"; c.placeholder = "Concepto"; c.value = concepto; c.setAttribute("list", "conceptos-ret");
+  c.className = "des-concepto";
+  const i = document.createElement("input");
+  i.type = "number"; i.step = "0.01"; i.min = "0"; i.inputMode = "decimal"; i.placeholder = "Importe";
+  i.value = importe === "" ? "" : Math.abs(importe); i.className = "des-importe";
+  const x = document.createElement("button");
+  x.type = "button"; x.className = "btn ghost chico"; x.textContent = "✕"; x.setAttribute("aria-label", "Quitar");
+  x.onclick = () => { fila.remove(); recalcularDesglose(); };
+  c.addEventListener("input", recalcularDesglose);
+  i.addEventListener("input", recalcularDesglose);
+  fila.append(c, i, x);
+  $("#des-items").appendChild(fila);
+  return fila;
+}
+
+function pintarDesglose(des, verificado = false) {
+  $("#des-items").replaceChildren();
+  $("#des-bruto").value = des ? des.bruto : "";
+  for (const it of des?.items || []) filaDeduccion(it.concepto, it.importe);
+  $("#desglose").open = !!des;
+  estado.desgloseVerificado = verificado;
+  recalcularDesglose();
+}
+
+function leerDesglose() {
+  const bruto = parseFloat($("#des-bruto").value);
+  const items = $$("#des-items .des-fila")
+    .map((f) => ({ concepto: $(".des-concepto", f).value.trim() || "Deducción", importe: -Math.abs(parseFloat($(".des-importe", f).value)) }))
+    .filter((x) => x.importe);
+  return isNaN(bruto) || !items.length ? null : { bruto, items };
+}
+
+function recalcularDesglose() {
+  const des = leerDesglose();
+  const moneda = form.moneda.value || "ARS";
+  form.monto.readOnly = !!des;
+  if (!des) {
+    $("#des-neto").textContent = "Cargá el importe bruto y las retenciones: el monto se calcula solo (neto).";
+    $("#des-resumen").textContent = "";
+    $("#monto-nota").textContent = "";
+    return;
+  }
+  const ret = -des.items.reduce((a, x) => a + x.importe, 0);
+  const neto = Math.round((des.bruto - ret) * 100) / 100;
+  form.monto.value = neto.toFixed(2);
+  $("#des-neto").textContent = `Neto = ${fmt(des.bruto, moneda)} − ${fmt(ret, moneda)} = ${fmt(neto, moneda)}` +
+    (estado.desgloseVerificado ? "  ✔ coincide con el comprobante" : "");
+  $("#des-resumen").textContent = `· ${des.items.length} deducción${des.items.length === 1 ? "" : "es"}`;
+  $("#monto-nota").textContent = "(neto, calculado)";
+}
+
+$("#des-agregar").onclick = () => { $(".des-concepto", filaDeduccion()).focus(); recalcularDesglose(); };
+$("#des-bruto").addEventListener("input", () => { estado.desgloseVerificado = false; recalcularDesglose(); });
+
 // Vuelca en el formulario los datos leídos de un comprobante
 function aplicarDatos(datos, archivo) {
   const campos = ["monto", "moneda", "fecha_factura", "numero_factura", "tercero", "cuit", "categoria", "descripcion"];
@@ -276,6 +337,7 @@ function aplicarDatos(datos, archivo) {
     n++;
   }
   if (datos.tipo) setTipo(datos.tipo);
+  if (datos.desglose) pintarDesglose(datos.desglose, !!datos.desglose_verificado);
   if (datos.empresa_id) form.empresa_id.value = datos.empresa_id;
   if (n) setEstadoAdjunto(`📄 ${archivo.name} — se completaron ${n} campos. Revisalos antes de guardar.`, "ok");
   else setEstadoAdjunto(`📄 ${archivo.name} — ${datos.aviso || "no se pudieron leer datos"}. Completá los campos a mano.`, "aviso");
@@ -291,6 +353,8 @@ async function guardar(ev) {
     return;
   }
   const fd = new FormData(form);
+  const des = leerDesglose();
+  fd.set("desglose", des ? JSON.stringify(des) : "");
   if (estado.archivo) fd.append("archivo", estado.archivo);
   if (estado.quitarAdjunto) fd.append("quitar_adjunto", "true");
   const btn = $("#btn-guardar");

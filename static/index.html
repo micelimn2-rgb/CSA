@@ -132,6 +132,14 @@
         </section>
       </div>
 
+      <section class="card" id="card-ret" hidden>
+        <header class="card-head">
+          <div><h2>Retenciones sufridas</h2>
+            <p class="sub" id="ret-sub">Descontadas de tus cobros: sirven como pago a cuenta de impuestos</p></div>
+        </header>
+        <div id="ch-ret" class="barras-h"></div>
+      </section>
+
       <section class="card">
         <header class="card-head">
           <div><h2>Hoja de resumen mensual</h2><p class="sub">Mismos datos que los gráficos</p></div>
@@ -184,7 +192,7 @@
       </fieldset>
 
       <div class="grid">
-        <label>Monto *
+        <label>Monto * <span class="nota-campo" id="monto-nota"></span>
           <input name="monto" type="number" inputmode="decimal" step="0.01" min="0" required>
         </label>
         <label>Moneda
@@ -198,6 +206,21 @@
         <label>Fecha de carga
           <input id="fecha-carga" type="text" readonly tabindex="-1">
         </label>
+        <details class="ancho desglose" id="desglose">
+          <summary>Desglose: bruto y retenciones <span id="des-resumen" class="nota-campo"></span></summary>
+          <div class="des-cuerpo">
+            <label>Importe bruto
+              <input id="des-bruto" type="number" inputmode="decimal" step="0.01" min="0" placeholder="Antes de retenciones">
+            </label>
+            <div id="des-items" class="des-items"></div>
+            <datalist id="conceptos-ret">
+              <option value="Ret. Ingresos Brutos"><option value="Ret. IVA"><option value="Ret. Ganancias">
+              <option value="Ret. Seguridad Social"><option value="Comisión bancaria">
+            </datalist>
+            <button type="button" class="btn chico" id="des-agregar">+ Retención / deducción</button>
+            <p class="nota" id="des-neto"></p>
+          </div>
+        </details>
         <label class="ancho">Empresa
           <select name="empresa_id"></select>
         </label>

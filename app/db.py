@@ -57,6 +57,8 @@ def _migrar(conn) -> None:
         conn.execute("ALTER TABLE movimientos ADD COLUMN origen TEXT NOT NULL DEFAULT 'manual'")
     if "revisar" not in columnas:  # 1 = cargado automáticamente y todavía no revisado
         conn.execute("ALTER TABLE movimientos ADD COLUMN revisar INTEGER NOT NULL DEFAULT 0")
+    if "desglose" not in columnas:  # JSON: {"bruto": 100, "items": [{"concepto": "Ret. IVA", "importe": -10}]}
+        conn.execute("ALTER TABLE movimientos ADD COLUMN desglose TEXT")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_mov_cuit ON movimientos (cuit)")
 
     # Varias empresas: cada movimiento pertenece a una

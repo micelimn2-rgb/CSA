@@ -32,8 +32,16 @@ IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 CAMPOS_SCHEMA = {
     "type": "object",
     "properties": {
-        "tipo_documento": {"type": "string", "enum": ["factura", "transferencia", "recibo", "ticket", "otro"]},
+        "tipo_documento": {"type": "string",
+                           "enum": ["factura", "transferencia", "aviso_pago", "recibo", "ticket", "otro"]},
         "monto": {"type": ["number", "null"], "description": "Importe total final (o importe transferido)"},
+        "bruto": {"type": ["number", "null"], "description": "Importe antes de retenciones/deducciones, si las hay"},
+        "deducciones": {
+            "type": "array",
+            "description": "Retenciones, percepciones o deducciones restadas del bruto (importes positivos)",
+            "items": {"type": "object", "properties": {"concepto": {"type": "string"}, "importe": {"type": "number"}},
+                      "required": ["concepto", "importe"], "additionalProperties": False},
+        },
         "moneda": {"type": ["string", "null"], "description": "Código ISO: ARS, USD, EUR..."},
         "fecha": {"type": ["string", "null"], "description": "Fecha de emisión u operación, YYYY-MM-DD"},
         "numero": {"type": ["string", "null"], "description": "N.º de factura (tipo y número) o n.º de referencia/operación"},
@@ -43,7 +51,7 @@ CAMPOS_SCHEMA = {
         "receptor_cuit": {"type": ["string", "null"]},
         "descripcion": {"type": ["string", "null"], "description": "Resumen breve: conceptos facturados o motivo/concepto de la transferencia"},
     },
-    "required": ["tipo_documento", "monto", "moneda", "fecha", "numero", "emisor_nombre", "emisor_cuit",
+    "required": ["tipo_documento", "monto", "bruto", "deducciones", "moneda", "fecha", "numero", "emisor_nombre", "emisor_cuit",
                  "receptor_nombre", "receptor_cuit", "descripcion"],
     "additionalProperties": False,
 }
@@ -51,8 +59,9 @@ CAMPOS_SCHEMA = {
 PROMPT = (
     "Sos un asistente contable argentino. Extraé los datos de este comprobante (factura, transferencia "
     "bancaria, recibo o ticket). Si un dato no aparece, devolvé null. El monto es el TOTAL final como número "
-    "(punto decimal, sin separadores de miles). En una transferencia, el emisor es el ordenante y el receptor "
-    "el beneficiario. Respetá los espacios de los nombres. La descripción debe ser corta (máx. 200 caracteres)."
+    "(punto decimal, sin separadores de miles). En una transferencia o aviso de pago, el emisor es quien paga "
+    "y el receptor quien cobra. Si hay retenciones o deducciones, 'monto' es el NETO efectivamente cobrado o "
+    "pagado, 'bruto' el importe antes de descontarlas y cada una va en 'deducciones'. Respetá los espacios de los nombres. La descripción debe ser corta (máx. 200 caracteres)."
 )
 
 
@@ -104,6 +113,12 @@ def _extraer_con_claude(contenido: bytes, content_type: str) -> dict:
         raise RuntimeError("El modelo rechazó la solicitud")
     d = json.loads(next(b.text for b in resp.content if b.type == "text"))
     d["documento"] = d.pop("tipo_documento", None)
+    deducciones = [{"concepto": _concepto(x["concepto"]), "importe": -round(abs(x["importe"]), 2)}
+                   for x in d.pop("deducciones", None) or [] if x.get("importe")]
+    bruto = d.pop("bruto", None)
+    if deducciones and bruto:
+        d["desglose"] = {"bruto": round(bruto, 2), "items": deducciones}
+        d["monto"] = round(bruto - sum(abs(x["importe"]) for x in deducciones), 2)
     d["fecha"] = _parse_fecha(d["fecha"]) if d.get("fecha") else None
     for k in ("emisor_cuit", "receptor_cuit"):
         d[k] = _norm_cuit(d.get(k))
@@ -266,6 +281,12 @@ ETIQUETAS = [
     ("motivo", "motivo"), ("concepto", "concepto"), ("referencia", "referencia"),
     ("cuentaorigen", "ignorar"), ("cuentadestino", "ignorar"), ("hora", "ignorar"), ("seuo", "ignorar"),
     ("moneda", "moneda"),
+    ("factnro", "factura_pagada"), ("facturanro", "factura_pagada"), ("nrodefactura", "factura_pagada"),
+    ("factura", "factura_pagada"), ("facturan", "factura_pagada"),
+    ("importeneto", "neto"), ("totalneto", "neto"), ("netoacobrar", "neto"), ("netoapagar", "neto"),
+    ("totalacobrar", "neto"), ("importeacobrar", "neto"), ("liquido", "neto"), ("neto", "neto"),
+    ("formadepago", "forma_pago"), ("fomadepago", "forma_pago"),
+    ("totalretenciones", "ignorar"), ("detalle", "ignorar"),
 ]
 SECCIONES = [
     ("datosordenante", "emisor"), ("datosdelordenante", "emisor"), ("ordenante", "emisor"),
@@ -306,8 +327,10 @@ def _valido(campo: str, valor: str) -> bool:
         return _RE_CUIT.search(valor) is not None
     if campo in ("importe", "total"):
         return _monto_de(valor) is not None
-    if campo == "numero":
+    if campo in ("numero", "factura_pagada"):
         return re.search(r"\d{3,}", valor) is not None
+    if campo == "neto":
+        return _monto_de(valor) is not None
     if campo == "cbu":
         return re.search(r"\d{10,}", valor) is not None
     return bool(valor.strip())
@@ -363,7 +386,9 @@ def analizar_filas(filas: list) -> dict:
 
     primero = lambda k: (campos.get(k) or [None])[0]
     clave_texto = _clave(texto)
-    if "transferencia" in clave_texto or primero("emisor_cuit") and primero("receptor_cuit") and primero("cbu"):
+    if any(k in clave_texto for k in ("avisodepago", "ordendepago", "liquidaciondepago", "comprobantedepago")):
+        documento = "aviso_pago"
+    elif "transferencia" in clave_texto or primero("emisor_cuit") and primero("receptor_cuit") and primero("cbu"):
         documento = "transferencia"
     elif "factura" in clave_texto:
         documento = "factura"
@@ -379,8 +404,25 @@ def analizar_filas(filas: list) -> dict:
     importes = [m for m in map(_monto_de, campos.get("importe", [])) if m]
     if documento == "factura" and totales:
         monto = max(totales)
+    elif documento == "aviso_pago":
+        monto = max(totales + importes) if totales or importes else None
     else:
         monto = importes[0] if importes else (max(totales) if totales else None)
+
+    # Retenciones y otras deducciones: el monto del movimiento pasa a ser el NETO cobrado/pagado
+    deducciones = _deducciones(filas, documento)
+    desglose, verificado = None, False
+    if deducciones and documento != "factura":
+        netos = [m for m in map(_monto_de, campos.get("neto", [])) if m]
+        bruto = monto
+        if bruto is None and netos:
+            bruto = netos[0] + sum(abs(x["importe"]) for x in deducciones)
+        if bruto is not None:
+            neto = round(bruto - sum(abs(x["importe"]) for x in deducciones), 2)
+            todos = [v for v in (_monto_de(m.group()) for m in _RE_MONTO.finditer(texto.replace("$", " "))) if v]
+            verificado = any(abs(v - neto) < 0.05 for v in todos + netos)
+            desglose = {"bruto": round(bruto, 2), "items": deducciones}
+            monto = neto
 
     d = {
         "documento": documento,
@@ -392,6 +434,8 @@ def analizar_filas(filas: list) -> dict:
         "receptor_nombre": primero("receptor_nombre"),
         "receptor_cuit": _norm_cuit(primero("receptor_cuit")),
         "moneda": _moneda(texto),
+        "desglose": desglose,
+        "desglose_verificado": verificado,
     }
 
     # Sin secciones (típico de facturas): el primer nombre/CUIT es el emisor y el segundo el receptor
@@ -404,9 +448,26 @@ def analizar_filas(filas: list) -> dict:
 
     _completar_con_reglas(d, texto, filas)
 
+    if documento == "aviso_pago":
+        # En un aviso de pago el primer CUIT es el destinatario (quien cobra) y el del pie, el pagador
+        if not (primero("emisor_cuit") or primero("receptor_cuit")):
+            orden = list(dict.fromkeys(c for c in (_norm_cuit(m.group()) for m in _RE_CUIT.finditer(texto)) if c))
+            if len(orden) >= 2:
+                d["receptor_cuit"], d["emisor_cuit"] = orden[0], orden[-1]
+        if not d["receptor_nombre"] and d["receptor_cuit"]:
+            d["receptor_nombre"] = _nombre_debajo_de(filas, d["receptor_cuit"])
+        if primero("factura_pagada"):
+            d["numero"] = _limpiar_numero(primero("factura_pagada"))
+
     detalle = []
     if documento == "transferencia":
         detalle.append("Transferencia")
+    elif documento == "aviso_pago":
+        detalle.append("Aviso de pago" + (f" N.º {primero('numero')}" if primero("numero") else ""))
+        if primero("factura_pagada"):
+            detalle.append(f"Factura {primero('factura_pagada')}")
+        if primero("forma_pago"):
+            detalle.append(f"Forma de pago: {primero('forma_pago')}")
     for etiqueta, k in (("Motivo", "motivo"), ("Concepto", "concepto"), ("Ref.", "referencia")):
         if primero(k):
             detalle.append(f"{etiqueta}: {primero(k)}")
@@ -418,6 +479,53 @@ def analizar_filas(filas: list) -> dict:
         detalle.append(" | ".join(lineas))
     d["descripcion"] = " · ".join(detalle)[:300]
     return d
+
+
+# ================================================================ Retenciones y deducciones
+
+_RE_DEDUCCION = re.compile(r"^\s*(ret\b|ret\.|retenc|percep|deducc|descuento|comisi[oó]n|gastos?\s+banc|imp\.?\s*ley|sircreb)", re.I)
+CONCEPTOS = [  # nombre normalizado para agrupar (se compara sin espacios ni signos)
+    (("ingbrutos", "ingresosbrutos", "iibb", "sircreb"), "Ret. Ingresos Brutos"),
+    (("segsocial", "seguridadsocial", "suss"), "Ret. Seguridad Social"),
+    (("ganancias",), "Ret. Ganancias"),
+    (("iva",), "Ret. IVA"),
+]
+
+
+def _concepto(texto: str) -> str:
+    k = _clave(texto)
+    if k.startswith(("ret", "retenc")):
+        for claves, nombre in CONCEPTOS:
+            if any(c in k for c in claves):
+                return nombre
+    return re.sub(r"\s+", " ", texto).strip(" :")[:60]
+
+
+def _deducciones(filas: list, documento: str) -> list[dict]:
+    """Renglones del tipo "Ret. IVA   -11.178.276,82". En avisos de pago y recibos se toman aunque
+    el importe no tenga signo; en otros comprobantes solo si figura en negativo."""
+    salida = []
+    for fila in filas:
+        etiqueta = fila[0][1]
+        if not _RE_DEDUCCION.match(etiqueta) or len(fila) < 2:
+            continue
+        valor = fila[-1][1]
+        importe = _monto_de(valor)
+        negativo = valor.strip().startswith("-")
+        if importe and (negativo or documento in ("aviso_pago", "recibo")):
+            salida.append({"concepto": _concepto(etiqueta), "importe": -round(importe, 2)})
+    return salida
+
+
+def _nombre_debajo_de(filas: list, cuit: str) -> str | None:
+    """Nombre que figura en el renglón siguiente al CUIT (bloque de dirección)."""
+    digitos = re.sub(r"\D", "", cuit)
+    for i, fila in enumerate(filas[:-1]):
+        if any(digitos in re.sub(r"\D", "", t) for _, t in fila):
+            nombre = filas[i + 1][0][1]
+            if re.search(r"[A-Za-z]{3,}", nombre):
+                return nombre[:120]
+    return None
 
 
 # ================================================================ Reglas generales (respaldo)
@@ -481,7 +589,9 @@ def parse_monto(s: str) -> float | None:
     elif s.count(".") == 1 and len(s.split(".")[-1]) == 3:
         s = s.replace(".", "")  # 1.500 -> 1500
     elif s.count(".") > 1:
-        s = s.replace(".", "")
+        # 80.510.208.02: si el último grupo tiene 2 dígitos es el decimal (el OCR confundió la coma)
+        partes = s.split(".")
+        s = "".join(partes[:-1]) + "." + partes[-1] if len(partes[-1]) == 2 else s.replace(".", "")
     try:
         return float(s)
     except ValueError:
@@ -542,12 +652,14 @@ def resolver(d: dict, cuits_propios: list[str]) -> dict:
     documento = d.get("documento") or "otro"
 
     propio = None  # el CUIT propio que aparece en el comprobante, si alguno
-    if documento == "transferencia":
-        # Transferencia: emisor = ordenante (paga), receptor = beneficiario (cobra)
+    if documento in ("transferencia", "aviso_pago"):
+        # Transferencia o aviso de pago: emisor = quien paga, receptor = quien cobra
         if emisor[1] and emisor[1] in propios:
-            tipo, contra, motivo, propio = "egreso", receptor, "el ordenante es tu CUIT", emisor[1]
+            tipo, contra, motivo, propio = "egreso", receptor, "el pagador es tu CUIT", emisor[1]
         elif receptor[1] and receptor[1] in propios:
             tipo, contra, motivo, propio = "ingreso", emisor, "el beneficiario es tu CUIT", receptor[1]
+        elif documento == "aviso_pago":
+            tipo, contra, motivo = "ingreso", emisor, "aviso de pago recibido (por defecto)"
         else:
             tipo, contra, motivo = "egreso", receptor, "transferencia enviada (por defecto)"
     else:
@@ -572,6 +684,8 @@ def resolver(d: dict, cuits_propios: list[str]) -> dict:
         "cuit": contra[1],
         "descripcion": d.get("descripcion"),
         "cuit_propio": propio,
+        "desglose": d.get("desglose"),
+        "desglose_verificado": d.get("desglose_verificado") or None,
     }
     # Si no hay CUIT propio configurado, se sugiere el del lado "propio" según el tipo asumido
     if not propios:

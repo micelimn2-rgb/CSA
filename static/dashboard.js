@@ -101,6 +101,13 @@ function pintarDashboard() {
   graficoSaldo($("#ch-saldo"), d);
   barrasSegmento($("#ch-seg-egreso"), d.segmentos.egreso, "egreso", d.moneda);
   barrasSegmento($("#ch-seg-ingreso"), d.segmentos.ingreso, "ingreso", d.moneda);
+  const ret = d.deducciones?.ingreso;
+  $("#card-ret").hidden = !ret?.total;
+  if (ret?.total) {
+    barrasSegmento($("#ch-ret"), ret.conceptos, "retencion", d.moneda);
+    $("#ret-sub").textContent = `${fmt(ret.total, d.moneda)} descontados de cobros por ${fmt(ret.bruto, d.moneda)} brutos` +
+      " · sirven como pago a cuenta de impuestos";
+  }
   tablaMeses($("#tb-meses"), d);
   tablaMatriz($("#tb-matriz"), d);
 }
@@ -116,7 +123,10 @@ function pintarKpis(d) {
   const kpi = (titulo, valor, det, key = "") =>
     `<div class="kpi"><h3>${key}${titulo}</h3><div class="valor">${valor}</div><div class="det">${det}</div></div>`;
   $("#d-kpis").innerHTML =
-    kpi("Ingresos", fmt(t.ingresos, m), `${d.segmentos.ingreso.reduce((a, s) => a + s.cantidad, 0)} movimientos`, '<i class="key ingreso"></i>') +
+    kpi("Ingresos" + (d.deducciones?.ingreso?.total ? " (netos)" : ""), fmt(t.ingresos, m),
+      d.deducciones?.ingreso?.total
+        ? `Retenciones ${fmt(d.deducciones.ingreso.total, m)} · ${d.segmentos.ingreso.reduce((a, s) => a + s.cantidad, 0)} mov.`
+        : `${d.segmentos.ingreso.reduce((a, s) => a + s.cantidad, 0)} movimientos`, '<i class="key ingreso"></i>') +
     kpi("Egresos", fmt(t.egresos, m), `Promedio mensual ${fmt(t.promedio_egresos, m)}`, '<i class="key egreso"></i>') +
     kpi("Saldo del período", `<span class="${t.saldo < 0 ? "egr" : ""}">${fmt(t.saldo, m)}</span>`, `${mesesConDatos} de ${d.meses.length} meses con movimientos`) +
     kpi("Margen", t.margen == null ? "—" : `${t.margen.toLocaleString("es-AR")} %`, "Saldo sobre ingresos");
@@ -307,7 +317,9 @@ function vacioChart(cont, texto) {
 
 function barrasSegmento(cont, segs, tipo, moneda) {
   cont.replaceChildren();
-  if (!segs.length) return vacioChart(cont, `Sin ${tipo === "egreso" ? "egresos" : "ingresos"} en este período.`);
+  const nombres = { egreso: "egresos", ingreso: "ingresos", retencion: "retenciones" };
+  const colores = { egreso: "--s-egreso", ingreso: "--s-ingreso", retencion: "--s-ret" };
+  if (!segs.length) return vacioChart(cont, `Sin ${nombres[tipo]} en este período.`);
   const max = Math.max(...segs.map((s) => s.total));
   for (const s of segs) {
     const fila = document.createElement("div");
@@ -331,9 +343,9 @@ function barrasSegmento(cont, segs, tipo, moneda) {
     pista.appendChild(barra);
     fila.append(nom, val, pista);
     const tt = (ev) => mostrarTip(ev, s.nombre, [
-      [colorVar(tipo === "egreso" ? "--s-egreso" : "--s-ingreso"), "Total", fmt(s.total, moneda)],
+      [colorVar(colores[tipo]), "Total", fmt(s.total, moneda)],
       [null, "Movimientos", String(s.cantidad)],
-      [null, `% de ${tipo === "egreso" ? "egresos" : "ingresos"}`, `${s.pct.toLocaleString("es-AR")} %`],
+      [null, `% de ${nombres[tipo]}`, `${s.pct.toLocaleString("es-AR")} %`],
     ]);
     fila.addEventListener("pointermove", tt);
     fila.addEventListener("focus", tt);

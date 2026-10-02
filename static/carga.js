@@ -90,6 +90,8 @@ async function procesar(archivo, forzar = false, liPrevio = null) {
     const otra = m.empresa_id !== empresas.id;
     nuevo = itemResultado("creado", `${otra ? `→ ${r.datos.empresa_nombre}: ` : ""}✔ ${describir(m)}`,
       [otra && `Se cargó en ${r.datos.empresa_nombre} porque el CUIT del comprobante es de esa empresa`,
+        m.desglose && `Neto: bruto ${fmt(m.desglose.bruto, m.moneda)} − ${m.desglose.items.length} retenciones` +
+          (r.datos.desglose_verificado ? " ✔" : ""),
         m.numero_factura && `N.º ${m.numero_factura}`, m.categoria, r.datos.tipo_motivo].filter(Boolean).join(" · "),
       [["Revisar", () => revisar(m.id)]]);
   } else if (r.estado === "duplicado") {
