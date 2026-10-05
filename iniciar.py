@@ -39,6 +39,32 @@ def version_local() -> str:
     return texto.split('VERSION = "')[1].split('"')[0]
 
 
+def probar_lector_de_fotos() -> None:
+    """Lee una imagen de prueba con el lector de fotos y avisa en esta ventana si funciona."""
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        print("  Lector de fotos: no instalado (solo se leen automaticamente PDFs con texto).")
+        return
+    img = np.full((80, 400, 3), 255, np.uint8)
+    cv2.putText(img, "Importe 1234,56", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 0, 0), 2)
+    png = cv2.imencode(".png", img)[1].tobytes()
+    try:
+        proc = subprocess.run([sys.executable, "-m", "app.ocr_worker"], input=png, capture_output=True,
+                              cwd=CARPETA, timeout=180)
+        ok = proc.returncode == 0 and b"1234" in proc.stdout
+    except subprocess.TimeoutExpired:
+        ok, proc = False, None
+    if ok:
+        print("  Lector de fotos: funcionando OK")
+    else:
+        motivo = "tardo demasiado" if proc is None else (proc.stderr.decode("utf-8", "replace").strip().splitlines()
+                                                          or [f"codigo {proc.returncode}"])[-1][:150]
+        print(f"  Lector de fotos: NO funciona ({motivo}).")
+        print("  Las fotos y PDFs escaneados se van a tener que completar a mano.")
+
+
 def esperar_y_salir(codigo: int = 0) -> None:
     input("\nApretá Enter para cerrar esta ventana...")
     sys.exit(codigo)
@@ -77,6 +103,7 @@ def main() -> None:
     print("  Para cerrar la app, cerrá esta ventana o apretá Ctrl+C.")
     print("=" * 60 + "\n")
 
+    threading.Thread(target=probar_lector_de_fotos, daemon=True).start()
     threading.Timer(2.5, lambda: webbrowser.open(f"http://localhost:{PUERTO}")).start()
     import uvicorn
     sys.path.insert(0, str(CARPETA))

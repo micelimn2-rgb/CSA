@@ -15,7 +15,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 // ------------------------------------------------------------ Versión
 // Si se actualizan los archivos con la app abierta, el servidor sigue con el código viejo.
-const VERSION_WEB = "7";
+const VERSION_WEB = "8";
 
 async function verificarVersion() {
   let version = null;
@@ -129,7 +129,14 @@ $("#btn-empresa-renombrar").onclick = async () => {
 };
 
 async function api(url, opciones = {}) {
-  const r = await fetch(conEmpresa(url), opciones);
+  let r;
+  try {
+    r = await fetch(conEmpresa(url), opciones);
+  } catch {
+    // "Failed to fetch": la ventana negra se cerró o la app se reinició
+    throw new Error("Se perdió la conexión con la app. Fijate que la ventana negra siga abierta " +
+      "(si se cerró, abrí iniciar.bat de nuevo) y probá otra vez.");
+  }
   if (!r.ok) {
     let msg = `Error ${r.status}`;
     try {
@@ -253,7 +260,7 @@ async function alElegirArchivo(ev) {
   ev.target.value = "";
   if (!archivo) return;
   estado.archivo = archivo;
-  setEstadoAdjunto(`📄 ${archivo.name} — leyendo datos de la factura…`);
+  setEstadoAdjunto(`📄 ${archivo.name} — leyendo datos del comprobante… (si es una foto o un PDF escaneado puede tardar hasta un minuto)`);
   const fd = new FormData();
   fd.append("archivo", archivo);
   try {

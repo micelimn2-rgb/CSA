@@ -71,7 +71,8 @@ function describir(m) {
 const revisar = async (id) => abrir(await api(`api/movimientos/${id}`));
 
 async function procesar(archivo, forzar = false, liPrevio = null) {
-  const li = itemResultado("procesando", `⏳ ${archivo.name}`, "Leyendo el comprobante…");
+  const li = itemResultado("procesando", `⏳ ${archivo.name}`,
+    "Leyendo el comprobante… (si es una foto o un PDF escaneado puede tardar hasta un minuto)");
   liPrevio ? liPrevio.replaceWith(li) : resLista.prepend(li);
   const fd = new FormData();
   fd.append("archivo", archivo);

@@ -13,6 +13,7 @@ from pathlib import Path
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from . import VERSION, db, extractor
 
@@ -22,6 +23,28 @@ TIPOS_ADJUNTO = {"application/pdf", "image/jpeg", "image/png", "image/webp", "im
 
 app = FastAPI(title="CSA - Ingresos y Gastos")
 db.init_db()
+
+# Registro de errores en data/csa.log (para diagnosticar problemas en la computadora del usuario)
+import logging
+from logging.handlers import RotatingFileHandler
+
+for _h in list(logging.getLogger("app").handlers):  # al recargar el módulo no duplicar el registro
+    if isinstance(_h, RotatingFileHandler):
+        logging.getLogger("app").removeHandler(_h)
+        _h.close()
+_registro = RotatingFileHandler(db.DATA_DIR / "csa.log", maxBytes=1_000_000, backupCount=2, encoding="utf-8")
+_registro.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+_registro.setLevel(logging.WARNING)
+logging.getLogger("app").addHandler(_registro)
+logging.getLogger("app").setLevel(logging.INFO)
+log = logging.getLogger("app.main")
+
+
+@app.exception_handler(Exception)
+async def error_inesperado(request: Request, exc: Exception):
+    log.exception("Error inesperado en %s %s", request.method, request.url.path)
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"detail": f"Error inesperado: {exc}. Quedó anotado en data/csa.log."}, status_code=500)
 
 
 # ---------------------------------------------------------------- Acceso opcional con usuario/clave
@@ -357,10 +380,12 @@ def _completar_con_historial(conn, empresa_id: int, datos: dict) -> None:
         datos["categoria"] = row["categoria"]
 
 
-def _leer_y_completar(contenido: bytes, tipo_archivo: str, empresa: int | None) -> dict:
+def _leer_y_completar(contenido: bytes, tipo_archivo: str, empresa: int | None, nombre: str | None = None) -> dict:
     """Lee el comprobante y decide a qué empresa pertenece: si aparece el CUIT de otra de tus
     empresas, va a esa; si no, a la que estás viendo."""
-    crudo, metodo, aviso = extractor.leer_crudo(contenido, tipo_archivo)
+    crudo, metodo, aviso = extractor.leer_crudo(contenido, tipo_archivo, nombre)
+    if aviso and metodo == "ninguno":
+        log.warning("No se pudo leer %s (%s): %s", nombre, tipo_archivo, aviso)
     if crudo is None:
         return {"metodo": "ninguno", "aviso": aviso}
     with db.connect() as conn:
@@ -388,18 +413,24 @@ def _leer_y_completar(contenido: bytes, tipo_archivo: str, empresa: int | None) 
 @app.post("/api/leer-factura")
 async def leer_factura(archivo: UploadFile = File(...), empresa: int | None = None):
     contenido, tipo = await _leer_adjunto(archivo)
-    return _leer_y_completar(contenido, tipo, empresa)
+    # La lectura puede tardar (OCR): se hace fuera del hilo principal para no frenar la app
+    return await run_in_threadpool(_leer_y_completar, contenido, tipo, empresa, archivo.filename)
 
 
 @app.post("/api/carga-automatica")
 async def carga_automatica(archivo: UploadFile = File(...), forzar: bool = Form(False), empresa: int | None = None):
     """Lee el comprobante y, si encuentra el monto, guarda el movimiento sin pedir nada más."""
     contenido, tipo_archivo = await _leer_adjunto(archivo)
-    datos = _leer_y_completar(contenido, tipo_archivo, empresa)
+    datos = await run_in_threadpool(_leer_y_completar, contenido, tipo_archivo, empresa, archivo.filename)
     respuesta = {"datos": datos, "archivo": archivo.filename}
     if datos.get("sugerencia_cuit_propio"):
         respuesta["sugerencia_cuit_propio"] = datos["sugerencia_cuit_propio"]
 
+    estado_cbte = (datos.get("estado_comprobante") or "").lower()
+    if any(p in estado_cbte for p in ("rechaz", "anulad", "cancelad", "fallid")):
+        return {**respuesta, "estado": "incompleto",
+                "mensaje": f"El comprobante figura como {datos['estado_comprobante']}: no se cargó. "
+                           "Si igual corresponde, completalo a mano."}
     if not datos.get("monto"):
         return {**respuesta, "estado": "incompleto",
                 "mensaje": datos.get("aviso") or "No se encontró el monto. Completalo a mano."}

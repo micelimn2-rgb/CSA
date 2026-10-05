@@ -43,6 +43,12 @@ computadora o el celular, y en el celular se puede instalar como app
 3. Doble clic en **`iniciar.bat`** (Windows) o **`iniciar.command`** (Mac).
 4. Se abre el navegador solo. La ventana negra muestra también la dirección para entrar desde el celular.
 
+### Si algo falla
+
+- La ventana negra indica al arrancar si el **lector de fotos** funciona en esa computadora.
+- Los errores quedan anotados en **`data/csa.log`**: mandá ese archivo para diagnosticar.
+- Si un comprobante no tiene el nombre del proveedor (pagos con tarjeta, por ejemplo), la app lo toma del **nombre del archivo**: "Cbte Pago EnvialoSimple - 200.000 envios $392.300.- (03-10-2026).pdf" → proveedor *EnvialoSimple*, detalle *200.000 envios*.
+
 ## Cómo levantarla (por consola)
 
 ```bash

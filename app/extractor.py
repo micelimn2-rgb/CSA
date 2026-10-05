@@ -20,7 +20,8 @@ import json
 import logging
 import os
 import re
-import threading
+import subprocess
+import sys
 import unicodedata
 from datetime import date
 
@@ -67,26 +68,82 @@ PROMPT = (
 
 # ================================================================ Entrada principal
 
-def extraer(contenido: bytes, content_type: str, cuits_propios: list[str] | None = None) -> dict:
+def extraer(contenido: bytes, content_type: str, cuits_propios: list[str] | None = None,
+            nombre_archivo: str | None = None) -> dict:
     """Devuelve los campos del movimiento listos para guardar, más 'metodo' y 'documento'."""
-    crudo, metodo, aviso = leer_crudo(contenido, content_type)
+    crudo, metodo, aviso = leer_crudo(contenido, content_type, nombre_archivo)
     if crudo is None:
         return {"metodo": "ninguno", "aviso": aviso}
     return {**resolver(crudo, cuits_propios or []), "metodo": metodo}
 
 
-def leer_crudo(contenido: bytes, content_type: str):
+def leer_crudo(contenido: bytes, content_type: str, nombre_archivo: str | None = None):
     """Lee el comprobante sin interpretar a quién pertenece. Devuelve (datos, metodo, aviso)."""
+    crudo = None
     if os.environ.get("ANTHROPIC_API_KEY") and (content_type == "application/pdf" or content_type in IMAGE_TYPES):
         try:
-            return _extraer_con_claude(contenido, content_type), "ia", None
+            crudo, metodo = _extraer_con_claude(contenido, content_type), "ia"
         except Exception as exc:  # si falla la IA, se intenta en modo local
             log.warning("Falló la extracción con Claude: %s", exc)
+    if crudo is None:
+        filas, metodo, aviso = _filas_de_archivo(contenido, content_type)
+        if not filas:
+            return None, "ninguno", aviso
+        crudo = analizar_filas(filas)
+    _usar_nombre_de_archivo(crudo, nombre_archivo)
+    return crudo, metodo, None
 
-    filas, metodo, aviso = _filas_de_archivo(contenido, content_type)
-    if not filas:
-        return None, "ninguno", aviso
-    return analizar_filas(filas), metodo, None
+
+# ================================================================ Pistas del nombre del archivo
+# Muchos comprobantes (pagos con tarjeta, Mercado Pago, etc.) no dicen a quién se pagó, pero el
+# archivo suele llamarse "Cbte Pago EnvialoSimple - 200.000 envios $392.300.- (03-10-2026).pdf".
+
+_PALABRAS_ARCHIVO = re.compile(
+    r"\b(cbte|comprobante|comp|constancia|pago|pagos|factura|fact|fc|recibo|transferencia|transf|aviso|"
+    r"de|del|la|el|a|al|para|nro|n°|numero)\b\.?", re.I)
+_MESES = re.compile(r"\b(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|"
+                    r"noviembre|diciembre)\b", re.I)
+_ARCHIVO_GENERICO = re.compile(
+    r"\b(img|image|imagen|whatsapp|scan|scanner|escaneo|document|documento|archivo|download|descarga|"
+    r"captura|screenshot|pantalla|file|untitled|sin titulo|photo|foto|(?:img|scan|dsc|doc)\d+)\b", re.I)
+_TITULO = re.compile(r"\b(detalle|informe|comprobante|constancia|aviso|factura|transferencia|resumen|recibo|"
+                     r"ticket|operaci[oó]n|pago)\b", re.I)
+
+
+def pistas_de_archivo(nombre: str | None) -> tuple[str | None, str | None]:
+    """Devuelve (contraparte, detalle) deducidos del nombre del archivo, si parece descriptivo."""
+    if not nombre:
+        return None, None
+    base = os.path.splitext(os.path.basename(nombre))[0].replace("_", " ")
+    if _ARCHIVO_GENERICO.search(base):
+        return None, None
+    base = re.sub(r"\(.*?\)", " ", base)                                  # (03-10-2026)
+    base = re.sub(r"\$\s?[\d.,]+(?:\.-|-)?", " ", base)                  # $392.300.-
+    base = re.sub(r"\b\d[\d.,]*\.-", " ", base)                          # 392.300.- (sin $)
+    base = re.sub(r"\b\d{1,4}[-/.]\d{1,2}[-/.]\d{2,4}\b", " ", base)     # fechas sueltas
+    base = _PALABRAS_ARCHIVO.sub(" ", base)
+    partes = [p.strip(" -.,") for p in re.split(r"\s+-\s+|\s{2,}-|-\s{2,}", base)]
+    partes = [re.sub(r"\s+", " ", p) for p in partes if re.search(r"[A-Za-zÁÉÍÓÚÑáéíóúñ]{3,}", p)]
+    if not partes:
+        return None, None
+    tercero, resto = partes[0], partes[1:]
+    meses = _MESES.findall(tercero)  # "Edenor septiembre": el mes es detalle, no parte del nombre
+    if meses and _MESES.sub("", tercero).strip():
+        tercero = re.sub(r"\s+", " ", _MESES.sub("", tercero)).strip()
+        resto = [" ".join(meses)] + resto
+    return tercero[:80], (" - ".join(resto)[:120] or None)
+
+
+def _usar_nombre_de_archivo(d: dict, nombre_archivo: str | None) -> None:
+    tercero, detalle = pistas_de_archivo(nombre_archivo)
+    contraparte = "receptor_nombre" if d.get("documento") == "transferencia" else "emisor_nombre"
+    actual = d.get(contraparte)
+    if tercero and (not actual or _TITULO.search(actual)):
+        d[contraparte] = tercero
+    elif actual and _TITULO.search(actual) and len(actual.split()) > 2:
+        d[contraparte] = None  # "Detalle del Informe de Pago" no es un proveedor
+    if detalle:
+        d["descripcion"] = f"{detalle} · {d.get('descripcion') or ''}".strip(" ·")[:300]
 
 
 # ================================================================ Claude
@@ -129,6 +186,13 @@ def _extraer_con_claude(contenido: bytes, content_type: str) -> dict:
 # Una "fila" es una lista de celdas (x, texto) ordenadas de izquierda a derecha.
 
 def _filas_de_archivo(contenido: bytes, content_type: str):
+    try:
+        return _filas_de_archivo_sin_control(contenido, content_type)
+    except ErrorOCR as exc:
+        return [], "ninguno", f"No se pudo leer el comprobante: {exc}. Completá los datos a mano."
+
+
+def _filas_de_archivo_sin_control(contenido: bytes, content_type: str):
     if content_type == "application/pdf":
         filas = _filas_pdf_texto(contenido)
         if sum(len(f) for f in filas) >= 3:
@@ -187,7 +251,10 @@ def _pdf_a_imagenes(contenido: bytes, max_paginas: int = 3) -> list:
         pdf = pdfium.PdfDocument(contenido)
         salida = []
         for i in range(min(len(pdf), max_paginas)):
-            img = pdf[i].render(scale=2.5).to_pil()
+            pagina = pdf[i]
+            ancho, alto = pagina.get_size()  # en puntos (1/72 de pulgada)
+            escala = min(2.5, 2000 / max(ancho, alto, 1))
+            img = pagina.render(scale=escala).to_pil()
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             salida.append(buf.getvalue())
@@ -197,48 +264,38 @@ def _pdf_a_imagenes(contenido: bytes, max_paginas: int = 3) -> list:
         return []
 
 
-_ocr_motor = None
-_ocr_lock = threading.Lock()
+OCR_TIEMPO_MAX = 180  # segundos por página
+
+
+class ErrorOCR(Exception):
+    """El lector de imágenes no pudo procesar la imagen (se cerró, tardó demasiado, etc.)."""
 
 
 def ocr_disponible() -> bool:
-    try:
-        import rapidocr_onnxruntime  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    import importlib.util
+    return all(importlib.util.find_spec(m) for m in ("rapidocr_onnxruntime", "cv2", "numpy"))
 
 
 def _filas_ocr(contenido: bytes):
-    """Devuelve filas de celdas leídas de la imagen, o None si no hay OCR instalado."""
-    global _ocr_motor
-    try:
-        import cv2
-        import numpy as np
-        from rapidocr_onnxruntime import RapidOCR
-    except ImportError:
+    """Devuelve filas de celdas leídas de la imagen, o None si no hay OCR instalado.
+    El OCR corre en un proceso aparte (app/ocr_worker.py) para que un fallo no tire la app."""
+    if not ocr_disponible():
         return None
-
-    img = cv2.imdecode(np.frombuffer(contenido, np.uint8), cv2.IMREAD_COLOR)
-    if img is None:
-        return []
-    # Las capturas chicas se leen mejor ampliadas (respeta mejor los espacios)
-    lado = max(img.shape[:2])
-    if lado < 1600:
-        f = min(2.5, 1600 / lado)
-        img = cv2.resize(img, None, fx=f, fy=f, interpolation=cv2.INTER_CUBIC)
-
-    with _ocr_lock:
-        if _ocr_motor is None:
-            _ocr_motor = RapidOCR()
-        resultado, _ = _ocr_motor(img)
-
-    cajas = []
-    for caja, texto, conf in resultado or []:
-        if conf < 0.5 or not texto.strip():
-            continue
-        ys = [p[1] for p in caja]
-        cajas.append({"x": min(p[0] for p in caja), "y0": min(ys), "y1": max(ys), "t": texto.strip()})
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        proc = subprocess.run([sys.executable, "-m", "app.ocr_worker"], input=contenido, capture_output=True,
+                              cwd=raiz, timeout=OCR_TIEMPO_MAX)
+    except subprocess.TimeoutExpired:
+        raise ErrorOCR(f"el lector de imágenes tardó más de {OCR_TIEMPO_MAX // 60} minutos")
+    if proc.returncode != 0:
+        detalle = proc.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [f"código {proc.returncode}"]
+        log.error("Falló el lector de imágenes (código %s): %s", proc.returncode,
+                  proc.stderr.decode("utf-8", "replace")[-2000:])
+        raise ErrorOCR(f"el lector de imágenes se cerró con un error ({detalle[0][:200]})")
+    try:
+        cajas = json.loads(proc.stdout or b"[]")
+    except ValueError:
+        raise ErrorOCR("respuesta inválida del lector de imágenes")
     return agrupar_en_filas(cajas)
 
 
@@ -285,7 +342,8 @@ ETIQUETAS = [
     ("factura", "factura_pagada"), ("facturan", "factura_pagada"),
     ("importeneto", "neto"), ("totalneto", "neto"), ("netoacobrar", "neto"), ("netoapagar", "neto"),
     ("totalacobrar", "neto"), ("importeacobrar", "neto"), ("liquido", "neto"), ("neto", "neto"),
-    ("formadepago", "forma_pago"), ("fomadepago", "forma_pago"),
+    ("formadepago", "forma_pago"), ("fomadepago", "forma_pago"), ("metododepago", "forma_pago"),
+    ("mediodepago", "forma_pago"), ("estado", "estado"), ("estadodelpago", "estado"),
     ("totalretenciones", "ignorar"), ("detalle", "ignorar"),
 ]
 SECCIONES = [
@@ -474,6 +532,11 @@ def analizar_filas(filas: list) -> dict:
     if primero("cbu"):
         cbu = re.sub(r"\D", "", primero("cbu"))
         detalle.append(f"CBU/CVU destino: {cbu}")
+    if documento != "aviso_pago" and primero("forma_pago"):
+        detalle.append(f"Medio de pago: {primero('forma_pago')}")
+    if primero("estado"):
+        d["estado"] = primero("estado")
+        detalle.append(f"Estado: {primero('estado')}")
     if len(detalle) <= 1:
         lineas = ["  ".join(t for _, t in f) for f in filas[:6]]
         detalle.append(" | ".join(lineas))
@@ -686,6 +749,7 @@ def resolver(d: dict, cuits_propios: list[str]) -> dict:
         "cuit_propio": propio,
         "desglose": d.get("desglose"),
         "desglose_verificado": d.get("desglose_verificado") or None,
+        "estado_comprobante": d.get("estado"),
     }
     # Si no hay CUIT propio configurado, se sugiere el del lado "propio" según el tipo asumido
     if not propios:
