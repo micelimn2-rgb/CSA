@@ -37,6 +37,30 @@ CREATE TABLE IF NOT EXISTS ajustes (
     clave TEXT PRIMARY KEY,
     valor TEXT
 );
+-- Consulta de clientes con deuda (se importa del Excel semanal) y registro de acciones
+CREATE TABLE IF NOT EXISTS clientes (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre    TEXT    NOT NULL,
+    clave     TEXT    NOT NULL UNIQUE,             -- nombre normalizado (sin tildes, mayúsculas)
+    vendedor  TEXT
+);
+CREATE TABLE IF NOT EXISTS cliente_cortes (       -- una fila del Excel: la deuda del cliente a una fecha
+    cliente_id INTEGER NOT NULL REFERENCES clientes (id),
+    fecha      TEXT    NOT NULL,                   -- YYYY-MM-DD
+    tramos     TEXT    NOT NULL,                   -- JSON: {"0-30": 1000.0, "30-60": 0, ...}
+    total      REAL    NOT NULL,
+    vendedor   TEXT,
+    PRIMARY KEY (cliente_id, fecha)
+);
+CREATE TABLE IF NOT EXISTS cliente_comentarios (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    cliente_id INTEGER NOT NULL REFERENCES clientes (id),
+    fecha      TEXT    NOT NULL,                   -- YYYY-MM-DD HH:MM:SS (o YYYY-MM-DD si vino del Excel)
+    autor      TEXT    NOT NULL,
+    texto      TEXT    NOT NULL,
+    origen     TEXT    NOT NULL DEFAULT 'web'      -- 'web' o 'excel'
+);
+CREATE INDEX IF NOT EXISTS idx_com_cliente ON cliente_comentarios (cliente_id, fecha);
 CREATE INDEX IF NOT EXISTS idx_mov_fecha ON movimientos (fecha_factura);
 CREATE INDEX IF NOT EXISTS idx_mov_tipo  ON movimientos (tipo);
 """

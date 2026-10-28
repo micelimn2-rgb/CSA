@@ -21,12 +21,14 @@ function el(tag, attrs = {}, padre) {
 // ------------------------------------------------------------ Navegación entre vistas
 
 function mostrarVista() {
-  const vista = location.hash === "#dashboard" ? "dashboard" : "movimientos";
+  const vista = ["#dashboard", "#clientes"].includes(location.hash) ? location.hash.slice(1) : "movimientos";
   document.body.dataset.vista = vista;
   $("#vista-movimientos").hidden = vista !== "movimientos";
   $("#vista-dashboard").hidden = vista !== "dashboard";
+  $("#vista-clientes").hidden = vista !== "clientes";
   $$(".tabs a").forEach((a) => a.classList.toggle("activo", a.dataset.vista === vista));
   if (vista === "dashboard") cargarDashboard();
+  if (vista === "clientes") cargarClientes();
 }
 window.addEventListener("hashchange", mostrarVista);
 document.addEventListener("empresa-cambiada", () => {

@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
-from . import VERSION, db, extractor
+from . import VERSION, clientes, db, extractor
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 MAX_ADJUNTO = 15 * 1024 * 1024  # 15 MB
@@ -759,6 +759,11 @@ def dashboard_csv(empresa: int | None = None, desde: str | None = None, hasta: s
     return Response(buf.getvalue(), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition":
                              f'attachment; filename="resumen_mensual_{_archivo_seguro(d["empresa"])}.csv"'})
+
+
+# ---------------------------------------------------------------- Clientes (CRM)
+
+app.include_router(clientes.router)
 
 
 # ---------------------------------------------------------------- Frontend

@@ -16,6 +16,7 @@
     <nav class="tabs" aria-label="Secciones">
       <a href="#movimientos" data-vista="movimientos" class="activo">Movimientos</a>
       <a href="#dashboard" data-vista="dashboard">Dashboard</a>
+      <a href="#clientes" data-vista="clientes">Clientes</a>
     </nav>
     <button id="btn-nuevo" class="btn primary">+ Nuevo</button>
   </header>
@@ -160,6 +161,55 @@
     </div>
   </main>
 
+  <main id="vista-clientes" class="crm" hidden>
+    <section class="auto">
+      <div class="auto-cab">
+        <div>
+          <h2>Consulta de clientes con deuda</h2>
+          <p class="nota" id="c-estado">Importá el Excel semanal de deuda para empezar.</p>
+        </div>
+        <label class="btn">📊 Importar Excel
+          <input id="c-excel" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+        </label>
+      </div>
+      <p id="c-import-res" class="nota" aria-live="polite" hidden></p>
+    </section>
+
+    <section class="filtros">
+      <input id="c-q" type="search" placeholder="Buscar cliente por nombre…" autocomplete="off" aria-label="Buscar cliente">
+    </section>
+
+    <div class="crm-cuerpo">
+      <section id="c-lista" class="lista" aria-label="Clientes"></section>
+
+      <section id="c-ficha" class="card ficha" hidden aria-live="polite">
+        <header class="card-head">
+          <div>
+            <button type="button" class="btn ghost chico" id="c-volver">← Volver</button>
+            <h2 id="c-nombre"></h2>
+            <p class="sub" id="c-sub"></p>
+          </div>
+        </header>
+        <div class="kpis" id="c-tramos"></div>
+
+        <h3 class="ficha-tit">Registro de acciones</h3>
+        <form id="c-form" class="c-form" novalidate>
+          <input id="c-autor" type="text" placeholder="Tu nombre" maxlength="60" autocomplete="name" aria-label="Tu nombre">
+          <textarea id="c-texto" rows="3" placeholder="¿Qué hiciste con el cliente? Ej.: Llamé, paga el viernes con cheque." aria-label="Comentario"></textarea>
+          <div class="c-form-pie">
+            <p id="c-error" class="error" role="alert" hidden></p>
+            <span class="flex"></span>
+            <button type="submit" class="btn primary">Agregar al historial</button>
+          </div>
+        </form>
+        <ol id="c-historial" class="historial"></ol>
+
+        <h3 class="ficha-tit">Evolución de la deuda</h3>
+        <div class="tabla-scroll"><table class="tabla" id="c-cortes"></table></div>
+      </section>
+    </div>
+  </main>
+
   <div id="soltar" class="soltar" hidden>Soltá los comprobantes para cargarlos</div>
 
   <div id="tooltip" class="tooltip" role="status" hidden></div>
@@ -256,5 +306,6 @@
   <script src="app.js"></script>
   <script src="dashboard.js"></script>
   <script src="carga.js"></script>
+  <script src="clientes.js"></script>
 </body>
 </html>

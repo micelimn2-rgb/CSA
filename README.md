@@ -34,6 +34,11 @@ computadora o el celular, y en el celular se puede instalar como app
   - La carga automática manda cada comprobante a la empresa cuyo CUIT figura en él, aunque estés viendo la otra.
   - Un movimiento se puede pasar a otra empresa desde su edición.
   - Lo cargado antes de separar por empresas quedó en la primera (Solvencias).
+- **Clientes** (pestaña "Clientes"): consulta de clientes con deuda y registro de acciones.
+  - **Importar Excel**: se sube el Excel semanal "Consulta de Clientes con Deuda" (.xls o .xlsx). Cada fila es la deuda de un cliente a una fecha, por tramos (0-30, 30-60, 60-90, 90-120) y con su vendedor. Se puede volver a importar todas las semanas: suma los cortes nuevos sin duplicar.
+  - **Buscador** por nombre (sin importar mayúsculas ni tildes, y por varias palabras): muestra la deuda del último corte, el vendedor y si el cliente ya no figura en el último Excel.
+  - **Ficha del cliente**: deuda por tramo, evolución semana a semana y **registro de acciones**: cualquiera escribe su nombre y un comentario, y queda en un historial con fecha y hora que ven todos (se actualiza solo cada 30 segundos).
+  - Las anotaciones de las columnas que siguen a VENDEDOR en el Excel (MM, A. FALCON, JG…) entran al historial con ese autor, una sola vez aunque se repitan semana a semana.
 - **Base de datos**: SQLite en `data/csa.db`. Las facturas se guardan en `data/facturas/`.
 
 ## Cómo probarla (doble clic)
@@ -81,6 +86,7 @@ python -m pytest -q
 app/main.py       API (FastAPI) y servidor de la web
 app/db.py         Base de datos SQLite
 app/extractor.py  Lectura de datos de facturas
+app/clientes.py   Clientes con deuda: importación del Excel, buscador y registro de acciones
 static/           Interfaz web (HTML/CSS/JS), instalable como app
 tests/            Tests automáticos
 ```
@@ -102,5 +108,9 @@ tests/            Tests automáticos
 | GET | `/api/exportar.csv` | Exportación |
 | GET | `/api/dashboard?desde=&hasta=&moneda=&segmento=categoria\|tercero\|factura` | Resumen mensual y segmentación |
 | GET | `/api/dashboard.csv` | Hoja de resumen mensual para Excel |
+| POST | `/api/clientes/importar` | Importa el Excel de deuda (form-data, `archivo`) |
+| GET | `/api/clientes?q=` | Buscador de clientes con la deuda del último corte |
+| GET | `/api/clientes/{id}` | Ficha: tramos, evolución (`cortes`) e `historial` |
+| POST | `/api/clientes/{id}/comentarios` | Agrega una acción (`{"autor": "...", "texto": "..."}`) |
 
 Todas las rutas de movimientos, resumen, dashboard y exportación aceptan `?empresa={id}` (si no se indica, usan la primera).

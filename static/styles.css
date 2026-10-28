@@ -327,3 +327,35 @@ input[readonly][name=monto] { background: var(--bg); }
 }
 .dlg-pie { flex-wrap: wrap; }
 @media (max-width: 430px) { .dlg-pie .btn { padding: 8px 10px; } }
+
+/* ---------------------------------------------------------------- Clientes (CRM) */
+body[data-vista="clientes"] .barra-empresas,
+body[data-vista="clientes"] #btn-nuevo { display: none; }
+.crm .filtros input[type=search] { font-size: 1.05rem; }
+.cli { border-left-color: var(--primary); }
+.cli.fuera { border-left-color: var(--border); }
+.cli .titulo { white-space: normal; }
+.ficha .card-head { margin-bottom: 12px; }
+.ficha h2 { font-size: 1.2rem; margin-top: 6px; }
+.ficha .kpis { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+.kpi.total { border-color: var(--primary); }
+.ficha-tit { margin: 18px 0 8px; font-size: .95rem; }
+.aviso-fuera { margin: 0 0 12px; padding: 8px 10px; border-radius: 10px; background: var(--ingreso-bg); font-size: .9rem; }
+.c-form { display: grid; gap: 8px; margin-bottom: 14px; }
+.c-form #c-autor { max-width: 260px; }
+.c-form-pie { display: flex; align-items: center; gap: 8px; }
+.c-form-pie .error { margin: 0; }
+.historial { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--border); display: grid; gap: 12px; }
+.historial li { position: relative; }
+.historial li::before {
+  content: ""; position: absolute; left: -20px; top: 6px; width: 10px; height: 10px;
+  border-radius: 50%; background: var(--primary); border: 2px solid var(--surface);
+}
+.historial li.excel::before { background: var(--muted); }
+.historial .h-meta { color: var(--muted); font-size: .82rem; }
+.historial .h-meta b { color: var(--text); }
+.historial .h-txt { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 2px; }
+.historial .vacio { padding: 8px 0; text-align: left; }
+@media (max-width: 520px) { .c-form #c-autor { max-width: none; } }
+#c-lista[hidden] { display: none; }
+.ficha .kpi .valor { font-size: 1.2rem; }

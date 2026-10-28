@@ -15,7 +15,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 // ------------------------------------------------------------ Versión
 // Si se actualizan los archivos con la app abierta, el servidor sigue con el código viejo.
-const VERSION_WEB = "8";
+const VERSION_WEB = "9";
 
 async function verificarVersion() {
   let version = null;

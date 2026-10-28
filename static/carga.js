@@ -149,7 +149,7 @@ let arrastres = 0;
 const capaSoltar = $("#soltar");
 const conArchivos = (ev) => [...(ev.dataTransfer?.types || [])].includes("Files");
 window.addEventListener("dragenter", (ev) => {
-  if (!conArchivos(ev) || $("#dlg").open) return;
+  if (!conArchivos(ev) || $("#dlg").open || document.body.dataset.vista === "clientes") return;
   arrastres++;
   capaSoltar.hidden = false;
 });
@@ -162,7 +162,7 @@ window.addEventListener("drop", (ev) => {
   ev.preventDefault();
   arrastres = 0;
   capaSoltar.hidden = true;
-  if (!$("#dlg").open) procesarVarios(ev.dataTransfer.files);
+  if (!$("#dlg").open && document.body.dataset.vista !== "clientes") procesarVarios(ev.dataTransfer.files);
 });
 
 document.addEventListener("empresa-cambiada", () => {
